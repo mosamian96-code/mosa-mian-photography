@@ -1,0 +1,23 @@
+{
+	# Cloudflare terminates public TLS at its edge; this is the *origin* cert. Set
+	# Cloudflare's SSL/TLS mode to "Full (strict)" so Cloudflare validates it too — that
+	# needs a Cloudflare Origin CA certificate (free, 15-year validity), not a
+	# Let's Encrypt one, since Let's Encrypt can't issue for a domain whose DNS is
+	# proxied (orange-clouded) through Cloudflare without extra DNS-01 plugin machinery.
+	# See docs/deploy.md for how to generate certs/origin-cert.pem and certs/origin-key.pem.
+	email admin@example.com
+}
+
+your-domain.example {
+	tls /certs/origin-cert.pem /certs/origin-key.pem
+
+	reverse_proxy app:3000
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
