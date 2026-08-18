@@ -212,7 +212,7 @@ Answered 2026-08-18:
 2. **Prints vs digital only**: Digital downloads only, today. Phase 7 ships Stripe Checkout + digital delivery; no print-on-demand provider in v1. Schema (`orders`, `pricelists`) and a `PrintProvider` interface are still built so prints can be added later without a migration.
 3. **Editing tool**: Lightroom Classic. The plugin in `lightroom-plugin/` targets the Lightroom Classic SDK (Lua) per section 6, as originally specced.
 4. **Ground**: Light. Design tokens (section 15, docs/design-tokens.md) use a light neutral palette, dark text/chrome, no theme toggle in v1.
-5. **Domain**: Not yet registered. Phase 1 will build and verify the Docker/Caddy/Cloudflare wiring against a placeholder domain locally; the "log in over HTTPS on the real domain" done-criterion is blocked on registering a domain and provisioning the Hetzner VPS, both of which require the photographer to act (payment, account creation) — Claude Code does not have a way to do this autonomously.
+5. **Domain**: `mosamianphotography.com`, registered and active as of 2026-08-18. The Caddyfile is wired to it. The "log in over HTTPS on the real domain" done-criterion is now only blocked on provisioning the Hetzner VPS and running the deploy steps in docs/deploy.md, both of which require the photographer to act (payment, VPS shell access) — Claude Code does not have a way to do this autonomously.
 
 ## 18. Environment
 
