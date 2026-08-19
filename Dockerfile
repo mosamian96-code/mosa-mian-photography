@@ -5,6 +5,11 @@ FROM node:22-slim AS base
 # enough to keep in the shared base rather than forking the runner/builder split further.
 RUN apt-get update && apt-get install -y --no-install-recommends perl \
     && rm -rf /var/lib/apt/lists/*
+# node:22-slim ships an older npm than this repo's package-lock.json was generated
+# with; `npm ci` between major npm versions can disagree on lockfile-v3 strictness
+# around optional platform packages (hit this for real: esbuild's per-OS optional
+# deps). Pin to match the local dev npm version so `npm ci` sees what generated the lock.
+RUN npm install -g npm@11
 
 FROM base AS deps
 WORKDIR /app
