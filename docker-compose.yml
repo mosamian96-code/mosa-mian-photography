@@ -11,6 +11,21 @@ services:
     expose:
       - "3000"
 
+  # Runs migrations against the `builder` image stage, which still has drizzle-kit and
+  # the rest of devDependencies -- unlike `app`, whose runner stage is deliberately
+  # slimmed to Next's standalone output and doesn't carry dev tooling. Not part of the
+  # default `up`; run explicitly: `docker compose run --rm migrate`.
+  migrate:
+    build:
+      context: .
+      target: builder
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run db:migrate
+    profiles: ["tools"]
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

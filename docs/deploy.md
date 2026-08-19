@@ -72,9 +72,14 @@ On the VPS, copy `.env.example` to `.env` and fill in every value:
 ## 7. Run migrations and start the stack
 
 ```bash
-docker compose run --rm app npm run db:migrate
+docker compose run --rm migrate
 docker compose up -d
 ```
+
+(`migrate` builds from the Dockerfile's `builder` stage, which still has drizzle-kit and
+the rest of devDependencies — the `app` service's final image is deliberately slimmed to
+Next's standalone output and doesn't carry dev tooling, so `docker compose run --rm app
+npm run db:migrate` fails with `drizzle-kit: not found`.)
 
 ## 8. Verify
 
