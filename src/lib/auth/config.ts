@@ -19,7 +19,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Resend({
       apiKey: process.env.RESEND_API_KEY,
-      from: process.env.CONTACT_TO_EMAIL ? `Mosa Mian Photography <${process.env.CONTACT_TO_EMAIL}>` : undefined,
+      // Resend only accepts a `from` address on a domain verified in that Resend
+      // account, except its built-in onboarding@resend.dev sandbox sender, which
+      // delivers only to the account owner's own email — exactly ADMIN_EMAIL here.
+      // Switch this to a mosamianphotography.com address once that domain is
+      // verified in Resend (see brief section 3 / docs/deploy.md).
+      from: "Mosa Mian Photography <onboarding@resend.dev>",
     }),
   ],
   callbacks: {
