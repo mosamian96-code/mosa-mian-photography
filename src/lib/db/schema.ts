@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   doublePrecision,
@@ -219,3 +220,75 @@ export const jobs = pgTable("job", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
+
+// Phase 3: structure and public site. Folders/galleries are the organizational layer
+// on top of Phase 2's assets — an asset can belong to many galleries and is never
+// duplicated in storage (brief section 4).
+
+const visibilityValues = ["public", "unlisted", "password", "private"] as const;
+
+export const folders = pgTable(
+  "folder",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    parentId: text("parent_id").references((): AnyPgColumn => folders.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    visibility: text("visibility", { enum: visibilityValues }).notNull().default("public"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("folder_parent_slug_unique").on(t.parentId, t.slug),
+    index("folder_parent_id_idx").on(t.parentId),
+  ],
+);
+
+export const galleries = pgTable(
+  "gallery",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    folderId: text("folder_id")
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    coverAssetId: text("cover_asset_id").references(() => assets.id, { onDelete: "set null" }),
+    visibility: text("visibility", { enum: visibilityValues }).notNull().default("public"),
+    passwordHash: text("password_hash"),
+    expiresAt: timestamp("expires_at", { mode: "date" }),
+    sortMode: text("sort_mode", { enum: ["capture_date", "upload_date", "filename", "manual"] })
+      .notNull()
+      .default("capture_date"),
+    downloadsPolicy: text("downloads_policy", { enum: ["off", "web", "original"] })
+      .notNull()
+      .default("off"),
+    publishedAt: timestamp("published_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [unique("gallery_folder_slug_unique").on(t.folderId, t.slug)],
+);
+
+export const galleryItems = pgTable(
+  "gallery_item",
+  {
+    galleryId: text("gallery_id")
+      .notNull()
+      .references(() => galleries.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+    caption: text("caption"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.galleryId, t.assetId] }),
+    index("gallery_item_gallery_id_idx").on(t.galleryId),
+  ],
+);

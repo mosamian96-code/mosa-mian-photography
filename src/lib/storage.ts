@@ -134,3 +134,9 @@ export function derivativeKey(sha256: string, variant: string, format: string) {
 export function watermarkedKey(sha256: string, variant: string, format: string) {
   return `watermarked/${sha256}/${variant}.${format}`;
 }
+
+/** Public URL for a derivative, proxied through /api/cdn (see that route for why). */
+export function publicDerivativeUrl(key: string) {
+  const base = process.env.CDN_BASE_URL;
+  return base ? `${base}/${key}` : `/api/cdn/${key}`;
+}

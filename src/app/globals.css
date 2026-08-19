@@ -1,22 +1,62 @@
 @import "tailwindcss";
 
+/* Design tokens — see docs/design-tokens.md. Five neutrals, one type pairing, a
+   4px spacing scale, one radius. Light ground only, no dark-mode media query, no
+   theme toggle in v1 (decided 2026-08-18). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --surface: #ffffff;
+  --surface-muted: #fafafa;
+  --border: #e5e5e5;
+  --ink-muted: #737373;
+  --ink: #171717;
+
+  --radius: 4px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink: var(--ink);
+
+  --radius-token: var(--radius);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 28px;
+  --text-xl: 28px;
+  --text-xl--line-height: 34px;
+  --text-2xl: 40px;
+  --text-2xl--line-height: 46px;
+  --text-3xl: 64px;
+  --text-3xl--line-height: 68px;
 }
 
-/* Light ground is a committed decision (brief section 15) — no dark-mode media query,
-   no theme toggle in v1. */
-
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+}
+
+/* prefers-reduced-motion: zero duration rather than removing state changes
+   (brief section 15). Applied globally so no individual component needs to
+   remember to handle it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -20,3 +20,17 @@ mosamianphotography.com, www.mosamianphotography.com {
 		Referrer-Policy "strict-origin-when-cross-origin"
 	}
 }
+
+# Public derivatives (brief section 5). Same origin cert covers this (wildcard
+# *.mosamianphotography.com). Rewrites so public URLs stay clean
+# (cdn.…/derivatives/x.webp) while actually hitting the app's proxy route.
+cdn.mosamianphotography.com {
+	tls /certs/origin-cert.pem /certs/origin-key.pem
+
+	rewrite * /api/cdn{uri}
+	reverse_proxy app:3000
+
+	encode zstd gzip
+
+	header Cache-Control "public, max-age=31536000, immutable"
+}

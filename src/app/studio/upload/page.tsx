@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { classifyKind } from "@/lib/ingest/classify";
 import { readDroppedFiles } from "./read-dropped-files";
@@ -207,9 +208,9 @@ export default function UploadPage() {
           </ul>
           <p className="mt-3 text-xs text-neutral-400">
             See the full result in the{" "}
-            <a href="/studio/library" className="underline">
+            <Link href="/studio/library" className="underline">
               library
-            </a>
+            </Link>
             .
           </p>
         </div>

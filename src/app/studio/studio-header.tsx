@@ -23,6 +23,9 @@ export function StudioHeader() {
             <Link href="/studio/upload" className="hover:text-neutral-900">
               Upload
             </Link>
+            <Link href="/studio/folders" className="hover:text-neutral-900">
+              Folders
+            </Link>
           </nav>
         ) : null}
       </div>

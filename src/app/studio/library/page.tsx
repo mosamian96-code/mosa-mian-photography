@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type LibraryItem = {
@@ -58,12 +59,12 @@ export default function LibraryPage() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-medium text-neutral-900">Library</h1>
-        <a
+        <Link
           href="/studio/upload"
           className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
         >
           Upload
-        </a>
+        </Link>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-neutral-500">
