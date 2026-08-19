@@ -17,7 +17,11 @@ async function renderOne(
   width: number,
   format: DerivativeFormat,
 ): Promise<GeneratedDerivative> {
-  let pipeline = sharp(baseRaster).resize({ width, withoutEnlargement: true });
+  // .rotate() with no args bakes the source's EXIF Orientation into the actual pixels
+  // before anything else touches them. Order matters: it must run before .resize().
+  // Without it, stripping EXIF (below) would silently discard the only record of which
+  // way the camera was held, leaving portrait/rotated shots sideways forever.
+  let pipeline = sharp(baseRaster).rotate().resize({ width, withoutEnlargement: true });
   // No .withMetadata() call anywhere in this file: sharp's default for a format
   // conversion is to drop all EXIF/IPTC/XMP from the output, which is exactly brief
   // section 5's "strip GPS and camera serial from every public derivative" — done by
@@ -44,6 +48,10 @@ export async function generatePublicDerivatives(baseRaster: Buffer): Promise<Gen
 
 /** Tiny inline blur placeholder, stored as a data URI directly in the DB (section 5). */
 export async function generateLqip(baseRaster: Buffer): Promise<string> {
-  const tiny = await sharp(baseRaster).resize({ width: 24, withoutEnlargement: true }).jpeg({ quality: 40 }).toBuffer();
+  const tiny = await sharp(baseRaster)
+    .rotate()
+    .resize({ width: 24, withoutEnlargement: true })
+    .jpeg({ quality: 40 })
+    .toBuffer();
   return `data:image/jpeg;base64,${tiny.toString("base64")}`;
 }

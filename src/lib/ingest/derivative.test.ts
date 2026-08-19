@@ -1,6 +1,12 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { exiftool } from "exiftool-vendored";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { generateLqip, generatePublicDerivatives } from "./derivative";
+
+afterAll(() => exiftool.end());
 
 const MARKER = "MOSA-MIAN-SECRET-MARKER";
 
@@ -46,6 +52,40 @@ describe("generatePublicDerivatives", () => {
     const derivatives = await generatePublicDerivatives(small);
     for (const d of derivatives) {
       expect(d.width).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("bakes EXIF orientation into pixels before stripping it, so rotated photos don't come out sideways", async () => {
+    // sharp's own withExif() can't reliably round-trip a hand-set Orientation tag (it's
+    // a binary SHORT, not the ASCII string pairs withExif is meant for) -- write it with
+    // exiftool instead, the same tool the real ingest pipeline reads EXIF with.
+    const tempDir = await mkdtemp(path.join(tmpdir(), "mmp-test-"));
+    const tempPath = path.join(tempDir, "source.jpg");
+    try {
+      await sharp({
+        create: { width: 800, height: 600, channels: 3, background: { r: 200, g: 50, b: 50 } },
+      })
+        .jpeg()
+        .toFile(tempPath);
+      // The `#` suffix tells exiftool to write the raw numeric code (6), not a
+      // human string like "Rotate 90 CW".
+      await exiftool.write(tempPath, { "Orientation#": 6 });
+      const rotatedSource = await readFile(tempPath);
+
+      const sourceMeta = await sharp(rotatedSource).metadata();
+      expect(sourceMeta.orientation).toBe(6);
+
+      // Orientation 6 = rotate 90deg CW to display correctly. A wide 800x600 source
+      // shot this way should come out taller than it is wide once corrected.
+      const derivatives = await generatePublicDerivatives(rotatedSource);
+      for (const d of derivatives) {
+        expect(
+          d.height,
+          `${d.format}/${d.variant} should be taller than wide once rotated`,
+        ).toBeGreaterThan(d.width);
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
     }
   });
 });
