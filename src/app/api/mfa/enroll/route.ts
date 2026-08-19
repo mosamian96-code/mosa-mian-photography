@@ -37,6 +37,16 @@ export async function POST(req: NextRequest) {
   const pendingSecret = req.cookies.get(PENDING_COOKIE)?.value;
   const { code } = (await req.json()) as { code?: string };
 
+  // TEMP DEBUG — remove after diagnosing the enrollment failure.
+  console.log("[mfa/enroll DEBUG]", {
+    hasPendingSecret: Boolean(pendingSecret),
+    pendingSecretLen: pendingSecret?.length,
+    codeReceived: code,
+    email: session.user.email,
+    allCookieNames: req.cookies.getAll().map((c) => c.name),
+    serverTime: new Date().toISOString(),
+  });
+
   if (!pendingSecret || !code || !verifyTotp(pendingSecret, session.user.email, code)) {
     return NextResponse.json({ error: "Invalid code" }, { status: 400 });
   }
