@@ -5,16 +5,17 @@ FROM node:22-slim AS base
 # enough to keep in the shared base rather than forking the runner/builder split further.
 RUN apt-get update && apt-get install -y --no-install-recommends perl \
     && rm -rf /var/lib/apt/lists/*
-# node:22-slim ships an older npm than this repo's package-lock.json was generated
-# with; `npm ci` between major npm versions can disagree on lockfile-v3 strictness
-# around optional platform packages (hit this for real: esbuild's per-OS optional
-# deps). Pin to match the local dev npm version so `npm ci` sees what generated the lock.
-RUN npm install -g npm@11
 
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# `npm ci` turned out to be more trouble than it's worth here: its lockfile-v3
+# completeness check disagreed between npm patch versions (dev machine vs. whatever
+# node:22-slim's npm happens to be) over optional platform packages vitest pulls in
+# transitively (rolldown's native bindings) that aren't even needed at runtime. This
+# project doesn't need npm ci's stricter reproducibility guarantee badly enough to
+# keep fighting that; npm install is more tolerant and just works.
+RUN npm install
 
 FROM base AS builder
 WORKDIR /app
