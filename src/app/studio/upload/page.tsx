@@ -1,21 +1,31 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { classifyKind } from "@/lib/ingest/classify";
 import { readDroppedFiles } from "./read-dropped-files";
 import { checkDuplicate, createBatch, hashFile, uploadFile } from "./upload-lib";
 
-type EntryStatus = "queued" | "hashing" | "duplicate" | "uploading" | "processing" | "error" | "unsupported";
+type EntryStatus =
+  | "queued"
+  | "hashing"
+  | "duplicate"
+  | "uploading"
+  | "processing"
+  | "done"
+  | "error"
+  | "unsupported";
 
 type Entry = {
   id: string;
   file: File;
   status: EntryStatus;
   progress: number;
+  assetId?: string;
   error?: string;
 };
 
 const CONCURRENCY = 3;
+const POLL_INTERVAL_MS = 2000;
 
 export default function UploadPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -26,6 +36,32 @@ export default function UploadPage() {
   const patchEntry = useCallback((id: string, patch: Partial<Entry>) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   }, []);
+
+  // Ingest happens in the background worker, after uploadFile() already resolved --
+  // poll actual asset status so "processing" doesn't just sit there forever once the
+  // upload itself is done.
+  useEffect(() => {
+    const pending = entries.filter((e) => e.status === "processing" && e.assetId);
+    if (pending.length === 0) return;
+
+    const timer = setTimeout(async () => {
+      const ids = pending.map((e) => e.assetId!).join(",");
+      const res = await fetch(`/api/upload/status?ids=${ids}`);
+      const { items } = (await res.json()) as {
+        items: { id: string; status: string; errorMessage: string | null }[];
+      };
+      for (const item of items) {
+        const entry = pending.find((e) => e.assetId === item.id);
+        if (!entry) continue;
+        if (item.status === "ready") patchEntry(entry.id, { status: "done" });
+        else if (item.status === "failed") {
+          patchEntry(entry.id, { status: "error", error: item.errorMessage ?? "ingest failed" });
+        }
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearTimeout(timer);
+  }, [entries, patchEntry]);
 
   async function processOne(entry: Entry, batchId: string) {
     try {
@@ -39,8 +75,10 @@ export default function UploadPage() {
       }
 
       patchEntry(entry.id, { status: "uploading", progress: 0 });
-      await uploadFile(entry.file, sha256, batchId, (fraction) => patchEntry(entry.id, { progress: fraction }));
-      patchEntry(entry.id, { status: "processing", progress: 1 });
+      const outcome = await uploadFile(entry.file, sha256, batchId, (fraction) =>
+        patchEntry(entry.id, { progress: fraction }),
+      );
+      patchEntry(entry.id, { status: "processing", progress: 1, assetId: outcome.assetId });
     } catch (err) {
       patchEntry(entry.id, { status: "error", error: err instanceof Error ? err.message : String(err) });
     }
@@ -93,8 +131,9 @@ export default function UploadPage() {
 
   const counts = {
     total: entries.length,
-    done: entries.filter((e) => e.status === "duplicate" || e.status === "processing").length,
+    done: entries.filter((e) => e.status === "duplicate" || e.status === "done").length,
     errors: entries.filter((e) => e.status === "error" || e.status === "unsupported").length,
+    processing: entries.filter((e) => e.status === "processing").length,
   };
 
   return (
@@ -141,7 +180,7 @@ export default function UploadPage() {
         <div className="mt-6">
           <p className="text-sm text-neutral-600">
             {counts.done + counts.errors} / {counts.total} handled
-            {running ? " — still working..." : ""}
+            {running || counts.processing > 0 ? " — still working..." : ""}
             {counts.errors > 0 ? `, ${counts.errors} need attention` : ""}
           </p>
           <ul className="mt-3 max-h-96 divide-y divide-neutral-200 overflow-y-auto rounded border border-neutral-200">
@@ -152,7 +191,7 @@ export default function UploadPage() {
                   className={`ml-3 shrink-0 text-xs ${
                     entry.status === "error" || entry.status === "unsupported"
                       ? "text-red-600"
-                      : entry.status === "duplicate"
+                      : entry.status === "duplicate" || entry.status === "done"
                         ? "text-neutral-400"
                         : "text-neutral-500"
                   }`}
@@ -167,11 +206,11 @@ export default function UploadPage() {
             ))}
           </ul>
           <p className="mt-3 text-xs text-neutral-400">
-            Processing (metadata, derivatives) continues in the background — check the{" "}
+            See the full result in the{" "}
             <a href="/studio/library" className="underline">
               library
-            </a>{" "}
-            in a moment.
+            </a>
+            .
           </p>
         </div>
       ) : null}
