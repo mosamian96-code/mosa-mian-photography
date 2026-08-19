@@ -102,10 +102,14 @@ export function GalleryView({ images }: { images: GalleryImage[] }) {
         items={images.map((img) => ({ id: img.assetId, aspect: (img.width ?? 3) / (img.height ?? 2) }))}
         targetRowHeight={260}
         gap={4}
-        renderItem={(item, width, height) => {
-          const index = images.findIndex((img) => img.assetId === item.id);
+        renderItem={(_gridItem, width, height, index) => {
           const image = images[index];
           const src = pickSrc(image.urls, "400");
+          // Brief sections 8/15: lazy below the fold, fetchpriority="high" on the
+          // hero. Only the very first image (the one most likely to be the page's
+          // LCP element) skips lazy loading and gets priority — everything else stays
+          // lazy exactly as before.
+          const isHero = index === 0;
           return (
             <button
               type="button"
@@ -117,7 +121,13 @@ export function GalleryView({ images }: { images: GalleryImage[] }) {
                 {src.avif ? <source srcSet={src.avif} type="image/avif" /> : null}
                 {src.webp ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={src.webp} alt={image.caption ?? image.filename} loading="lazy" className="h-full w-full object-cover" />
+                  <img
+                    src={src.webp}
+                    alt={image.caption ?? image.filename}
+                    loading={isHero ? "eager" : "lazy"}
+                    fetchPriority={isHero ? "high" : undefined}
+                    className="h-full w-full object-cover"
+                  />
                 ) : null}
               </picture>
             </button>
