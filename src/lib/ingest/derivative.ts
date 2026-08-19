@@ -55,3 +55,40 @@ export async function generateLqip(baseRaster: Buffer): Promise<string> {
     .toBuffer();
   return `data:image/jpeg;base64,${tiny.toString("base64")}`;
 }
+
+/**
+ * Applies a numeric EXIF orientation code directly, for buffers that carry no
+ * orientation tag of their own. This is specifically for RAW-embedded preview JPEGs:
+ * the orientation lives on the RAW container's EXIF, not on the extracted preview, so
+ * plain .rotate() (which only reads whatever tag is on the buffer it's given) silently
+ * no-ops on them. Standard 8-value EXIF orientation table; cameras only ever produce
+ * 1, 3, 6, or 8 in practice (2/4/5/7 are mirrored variants from scanners/software).
+ */
+export function normalizeOrientation(buffer: Buffer, orientation: number | undefined): Promise<Buffer> {
+  if (!orientation || orientation === 1) return Promise.resolve(buffer);
+  let pipeline = sharp(buffer);
+  switch (orientation) {
+    case 2:
+      pipeline = pipeline.flop();
+      break;
+    case 3:
+      pipeline = pipeline.rotate(180);
+      break;
+    case 4:
+      pipeline = pipeline.flip();
+      break;
+    case 5:
+      pipeline = pipeline.rotate(90).flip();
+      break;
+    case 6:
+      pipeline = pipeline.rotate(90);
+      break;
+    case 7:
+      pipeline = pipeline.rotate(270).flip();
+      break;
+    case 8:
+      pipeline = pipeline.rotate(270);
+      break;
+  }
+  return pipeline.jpeg().toBuffer();
+}

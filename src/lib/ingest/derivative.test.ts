@@ -4,7 +4,7 @@ import path from "node:path";
 import { exiftool } from "exiftool-vendored";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
-import { generateLqip, generatePublicDerivatives } from "./derivative";
+import { generateLqip, generatePublicDerivatives, normalizeOrientation } from "./derivative";
 
 afterAll(() => exiftool.end());
 
@@ -87,6 +87,37 @@ describe("generatePublicDerivatives", () => {
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("normalizeOrientation", () => {
+  it("rotates a buffer with no orientation tag of its own, given an explicit code", async () => {
+    // Simulates the real bug: a RAW-extracted preview JPEG has no orientation tag of
+    // its own (confirmed against a real file), so the container's orientation (8 here
+    // = rotate 270deg, i.e. what a portrait shot commonly carries) has to be applied
+    // explicitly rather than relying on the buffer's own (absent) metadata.
+    const plainLandscape = await sharp({
+      create: { width: 800, height: 600, channels: 3, background: { r: 50, g: 200, b: 50 } },
+    })
+      .jpeg()
+      .toBuffer();
+    expect((await sharp(plainLandscape).metadata()).orientation).toBeUndefined();
+
+    const rotated = await normalizeOrientation(plainLandscape, 8);
+    const rotatedMeta = await sharp(rotated).metadata();
+    expect(rotatedMeta.width).toBe(600);
+    expect(rotatedMeta.height).toBe(800);
+  });
+
+  it("leaves the buffer untouched for orientation 1 or undefined", async () => {
+    const source = await sharp({
+      create: { width: 800, height: 600, channels: 3, background: { r: 50, g: 200, b: 50 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    expect(await normalizeOrientation(source, undefined)).toBe(source);
+    expect(await normalizeOrientation(source, 1)).toBe(source);
   });
 });
 

@@ -8,7 +8,7 @@ import type { Job } from "bullmq";
 import { db } from "@/lib/db";
 import { assetGroups, assetKeywords, assetMetadata, assets, derivatives, keywords } from "@/lib/db/schema";
 import { extOf } from "@/lib/ingest/classify";
-import { generateLqip, generatePublicDerivatives } from "@/lib/ingest/derivative";
+import { generateLqip, generatePublicDerivatives, normalizeOrientation } from "@/lib/ingest/derivative";
 import { derivativeKey, getObjectBuffer, putObject } from "@/lib/storage";
 import type { IngestJobData } from "@/lib/queue";
 
@@ -18,18 +18,30 @@ function normalizeKeywords(raw: string | string[] | undefined): string[] {
   return [...new Set(list.map((k) => k.trim()).filter(Boolean))];
 }
 
-async function extractRasterBuffer(kind: string, tempPath: string, originalBuffer: Buffer): Promise<Buffer | null> {
+async function extractRasterBuffer(
+  kind: string,
+  tempPath: string,
+  originalBuffer: Buffer,
+  containerOrientation: number | undefined,
+): Promise<Buffer | null> {
   if (kind === "jpeg" || kind === "heic") return originalBuffer;
   if (kind === "sidecar") return null;
 
   // RAW: never demosaic. The camera-embedded preview carries the in-camera color
   // profile and is the right proxy (brief section 7), extracted via exiftool rather
   // than decoded from the raw sensor data.
+  let preview: Buffer;
   try {
-    return await exiftool.extractBinaryTagToBuffer("JpgFromRaw", tempPath);
+    preview = await exiftool.extractBinaryTagToBuffer("JpgFromRaw", tempPath);
   } catch {
-    return await exiftool.extractBinaryTagToBuffer("PreviewImage", tempPath);
+    preview = await exiftool.extractBinaryTagToBuffer("PreviewImage", tempPath);
   }
+
+  // The extracted preview carries no orientation tag of its own (confirmed by direct
+  // inspection: RAW container Orientation=8, embedded preview Orientation=undefined) --
+  // the rotation info only exists on the RAW container's EXIF. Bake it in here, before
+  // this buffer ever reaches the derivative pipeline's own (buffer-local) auto-rotate.
+  return normalizeOrientation(preview, containerOrientation);
 }
 
 async function linkSiblingsIntoGroup(assetId: string, batchId: string | undefined | null, basename: string) {
@@ -103,7 +115,7 @@ export async function processIngestJob(job: Job<IngestJobData>) {
     const keywordList = normalizeKeywords(tags.Keywords ?? tags.Subject);
 
     // 3/4. Base raster + derivatives (section 7 steps 3-4). Sidecars carry no image.
-    const rasterBuffer = await extractRasterBuffer(current.kind, tempPath, buffer);
+    const rasterBuffer = await extractRasterBuffer(current.kind, tempPath, buffer, tags.Orientation);
 
     let width: number | null = null;
     let height: number | null = null;
