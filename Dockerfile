@@ -1,4 +1,10 @@
 FROM node:22-slim AS base
+# exiftool-vendored's Linux build (exiftool-vendored.pl) is the real Perl exiftool
+# script, not a self-contained binary like its Windows counterpart -- it needs a
+# system Perl on PATH. Only the worker actually calls exiftool, but this is cheap
+# enough to keep in the shared base rather than forking the runner/builder split further.
+RUN apt-get update && apt-get install -y --no-install-recommends perl \
+    && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 WORKDIR /app

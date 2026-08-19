@@ -9,7 +9,8 @@
     "lint": "eslint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
@@ -17,15 +18,18 @@
     "@aws-sdk/s3-request-presigner": "^3.1112.0",
     "bullmq": "^6.1.2",
     "drizzle-orm": "^0.45.2",
+    "exiftool-vendored": "^37.2.0",
     "ioredis": "^6.0.0",
     "next": "16.3.1",
     "next-auth": "^5.0.0-beta.32",
     "otpauth": "^9.5.1",
+    "p-limit": "^7.3.1",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "resend": "^6.20.0"
+    "resend": "^6.20.0",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -38,6 +42,7 @@
     "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   }
 }

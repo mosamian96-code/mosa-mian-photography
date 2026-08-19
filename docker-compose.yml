@@ -26,6 +26,22 @@ services:
     command: npm run db:migrate
     profiles: ["tools"]
 
+  # BullMQ ingest consumer (exiftool + sharp). Runs from the `builder` stage too --
+  # same reasoning as `migrate`, plus it's a long-lived Node process, not a Next.js
+  # request handler, so it has no place inside `app`'s runner image at all.
+  worker:
+    build:
+      context: .
+      target: builder
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npx tsx src/worker/index.ts
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
