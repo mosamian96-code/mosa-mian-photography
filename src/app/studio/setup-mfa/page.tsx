@@ -33,7 +33,11 @@ export default function SetupMfaPage() {
     });
     setSubmitting(false);
     if (!res.ok) {
-      setError("That code didn't match. Try the next one.");
+      setError(
+        res.status === 401
+          ? "Your session expired — reload the page and sign in again."
+          : "That code didn't match. Try the next one.",
+      );
       return;
     }
     await update({ mfaEnrolled: true, mfaVerified: true });

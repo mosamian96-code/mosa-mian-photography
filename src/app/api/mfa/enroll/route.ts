@@ -29,34 +29,13 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  // TEMP DEBUG — remove after diagnosing the enrollment failure.
-  console.log("[mfa/enroll POST DEBUG] request received", {
-    allCookieNames: req.cookies.getAll().map((c) => c.name),
-    serverTime: new Date().toISOString(),
-  });
-
   const session = await auth();
-
-  console.log("[mfa/enroll POST DEBUG] session", {
-    hasSession: Boolean(session),
-    email: session?.user?.email,
-    userId: session?.user?.id,
-    mfaEnrolled: session?.mfaEnrolled,
-    mfaVerified: session?.mfaVerified,
-  });
-
   if (!session?.user?.id || !session.user.email) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const pendingSecret = req.cookies.get(PENDING_COOKIE)?.value;
   const { code } = (await req.json()) as { code?: string };
-
-  console.log("[mfa/enroll POST DEBUG] verifying", {
-    hasPendingSecret: Boolean(pendingSecret),
-    pendingSecretLen: pendingSecret?.length,
-    codeReceived: code,
-  });
 
   if (!pendingSecret || !code || !verifyTotp(pendingSecret, session.user.email, code)) {
     return NextResponse.json({ error: "Invalid code" }, { status: 400 });

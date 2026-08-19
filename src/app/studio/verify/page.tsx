@@ -22,7 +22,11 @@ export default function VerifyMfaPage() {
     });
     setSubmitting(false);
     if (!res.ok) {
-      setError("That code didn't match.");
+      setError(
+        res.status === 401
+          ? "Your session expired — reload the page and sign in again."
+          : "That code didn't match.",
+      );
       return;
     }
     await update({ mfaVerified: true });

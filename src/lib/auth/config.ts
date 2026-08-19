@@ -47,6 +47,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
+      // With the jwt session strategy, session.user isn't populated with an id by
+      // default -- token.sub carries it (Auth.js sets it from user.id at sign-in).
+      // Every route that authorizes by session.user.id depends on this.
+      if (token.sub) session.user.id = token.sub;
       session.mfaEnrolled = Boolean(token.mfaEnrolled);
       session.mfaVerified = Boolean(token.mfaVerified);
       return session;
