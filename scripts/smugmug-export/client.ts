@@ -2,6 +2,8 @@ import { type OAuthCredentials, signRequest } from "./oauth";
 
 const MIN_REQUEST_INTERVAL_MS = 300; // ~3 req/s -- SmugMug publishes no hard limit, this is a polite default
 const MAX_RETRIES = 6;
+const API_TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 120_000; // large RAW/JPEG originals need more room than a JSON listing call
 
 let lastRequestAt = 0;
 
@@ -20,6 +22,14 @@ class PermanentError extends Error {}
  * first real multi-hour run since only HTTP status was being retried, not fetch()
  * itself throwing). A PermanentError (e.g. a genuine 404) skips retries entirely
  * instead of burning through backoff delays on something that will never succeed.
+ *
+ * Every fetch() below carries an AbortSignal.timeout -- without one, a connection
+ * that hangs (TCP established, server never responds) never rejects at all, so it
+ * never hits this catch block and never gets retried. Confirmed live: a run looked
+ * merely slow for over an hour (a live process, climbing CPU, log output that turned
+ * out to be a stale buffered snapshot) but progress.json hadn't been touched in that
+ * entire time -- it was actually stuck forever on one request, not working through a
+ * backlog.
  */
 async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -46,6 +56,7 @@ export async function smugmugGet<T = unknown>(url: string, creds: OAuthCredentia
         Authorization: signRequest("GET", url, creds),
         Accept: "application/json",
       },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
     if (res.status === 429 || res.status >= 500) {
       throw new Error(`HTTP ${res.status}`);
@@ -60,7 +71,10 @@ export async function smugmugGet<T = unknown>(url: string, creds: OAuthCredentia
 /** Downloads a binary URL (image original) to a Buffer, same throttle/retry policy. */
 export async function smugmugDownload(url: string, creds: OAuthCredentials): Promise<Buffer> {
   return withRetry(`download ${url}`, async () => {
-    const res = await fetch(url, { headers: { Authorization: signRequest("GET", url, creds) } });
+    const res = await fetch(url, {
+      headers: { Authorization: signRequest("GET", url, creds) },
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    });
     if (res.status === 429 || res.status >= 500) {
       throw new Error(`HTTP ${res.status}`);
     }
