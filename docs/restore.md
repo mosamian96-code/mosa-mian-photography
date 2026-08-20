@@ -1,9 +1,8 @@
 # Backup and restore (brief section 13)
 
 Three copies, per the brief: the live Postgres volume + B2 originals (copy one), this
-nightly encrypted database backup in a second B2 bucket in a different region (copy
-two), and a local drive at home synced with rclone (copy three, set up separately —
-not part of this repo).
+nightly encrypted database backup in a second B2 bucket (copy two), and a local drive
+at home synced with rclone (copy three, set up separately — not part of this repo).
 
 This doc covers copy two and the restore drill that proves it actually works. B2
 originals themselves don't need a separate backup job — B2 already stores them
@@ -14,10 +13,13 @@ anything.
 
 ## One-time setup
 
-1. **Create a second B2 bucket in a different region** from the main `B2_BUCKET` (e.g.
-   if the main bucket is `eu-central-003`, put this one in `us-west-004` or similar).
-   Private bucket, no public access needed. Create an application key scoped to just
-   this bucket.
+1. **Create a second B2 bucket**, separate from the main `B2_BUCKET`. A different
+   region than the main bucket is ideal if the account offers a choice (protects
+   against a whole-region outage, not just accidental deletion or a compromised key),
+   but most B2 accounts are scoped to a single region for every bucket in them — a
+   second bucket in the same region still protects against the failure modes that
+   actually happen most often. Private bucket, no public access needed. Create an
+   application key scoped to just this bucket.
 2. **Generate an encryption passphrase**: `openssl rand -base64 32`. Save it somewhere
    that is *not* this server (a password manager) — if the VPS is lost, `.env` is lost
    with it, and an encrypted backup with no key anywhere else is not a backup.
