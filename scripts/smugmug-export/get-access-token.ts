@@ -7,12 +7,19 @@
 // never expire on their own (only if manually revoked from Account Settings -> Privacy
 // -> Authorized Services).
 //
-// Usage: npx tsx scripts/smugmug-export/get-access-token.ts <API_KEY> <API_SECRET>
+// Two steps, not one interactive prompt, since approving happens in a browser (a
+// separate human action in between):
+//   npx tsx scripts/smugmug-export/get-access-token.ts start <API_KEY> <API_SECRET>
+//   ...open the printed URL, approve, get the PIN...
+//   npx tsx scripts/smugmug-export/get-access-token.ts finish <PIN>
 
-import { createInterface } from "node:readline/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
 import { createHmac, randomBytes } from "node:crypto";
 
 const API_BASE = "https://api.smugmug.com";
+const STATE_FILE = path.join(tmpdir(), "mmp-smugmug-oauth-state.json");
 
 function percentEncode(value: string): string {
   return encodeURIComponent(value).replace(/[!*'()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
@@ -26,7 +33,7 @@ function sign(
   extraParams: Record<string, string>,
   token?: string,
   tokenSecret?: string,
-): { authHeader: string } {
+): string {
   const oauthParams: Record<string, string> = {
     oauth_consumer_key: consumerKey,
     oauth_nonce: randomBytes(16).toString("hex"),
@@ -48,70 +55,71 @@ function sign(
   const signature = createHmac("sha1", signingKey).update(signatureBase).digest("base64");
 
   const headerParams = { ...oauthParams, oauth_signature: signature };
-  const authHeader =
-    "OAuth " + Object.entries(headerParams).map(([k, v]) => `${percentEncode(k)}="${percentEncode(v)}"`).join(", ");
-  return { authHeader };
+  return "OAuth " + Object.entries(headerParams).map(([k, v]) => `${percentEncode(k)}="${percentEncode(v)}"`).join(", ");
 }
 
 function parseFormEncoded(body: string): Record<string, string> {
   return Object.fromEntries(new URLSearchParams(body));
 }
 
-async function main() {
-  const [consumerKey, consumerSecret] = process.argv.slice(2);
-  if (!consumerKey || !consumerSecret) {
-    console.error("Usage: npx tsx scripts/smugmug-export/get-access-token.ts <API_KEY> <API_SECRET>");
-    process.exit(1);
-  }
+type State = { consumerKey: string; consumerSecret: string; requestToken: string; requestTokenSecret: string };
 
-  // Step 1: request token, with oob callback (no server needed -- SmugMug shows a PIN
-  // on its own page instead of redirecting anywhere).
+async function start(consumerKey: string, consumerSecret: string) {
   const requestTokenUrl = `${API_BASE}/services/oauth/1.0a/getRequestToken`;
-  const { authHeader: reqAuth } = sign("GET", requestTokenUrl, consumerKey, consumerSecret, {
-    oauth_callback: "oob",
-  });
-  const reqRes = await fetch(requestTokenUrl, { headers: { Authorization: reqAuth } });
-  if (!reqRes.ok) {
-    console.error(`getRequestToken failed (${reqRes.status}): ${await reqRes.text()}`);
+  const authHeader = sign("GET", requestTokenUrl, consumerKey, consumerSecret, { oauth_callback: "oob" });
+  const res = await fetch(requestTokenUrl, { headers: { Authorization: authHeader } });
+  if (!res.ok) {
+    console.error(`getRequestToken failed (${res.status}): ${await res.text()}`);
     process.exit(1);
   }
-  const { oauth_token: requestToken, oauth_token_secret: requestTokenSecret } = parseFormEncoded(await reqRes.text());
+  const { oauth_token: requestToken, oauth_token_secret: requestTokenSecret } = parseFormEncoded(await res.text());
 
-  // Step 2: send the user to approve. Access=Full is needed to download originals
-  // (not just view web-size images); Permissions=Read is enough since this only ever
-  // exports, never modifies the SmugMug account.
+  const state: State = { consumerKey, consumerSecret, requestToken, requestTokenSecret };
+  await writeFile(STATE_FILE, JSON.stringify(state));
+
+  // Access=Full is needed to download originals (not just view web-size images);
+  // Permissions=Read is enough since this only ever exports, never modifies the account.
   const authorizeUrl = `${API_BASE}/services/oauth/1.0a/authorize?oauth_token=${requestToken}&Access=Full&Permissions=Read`;
-  console.log("\n1. Open this URL in a browser where you're logged into SmugMug:\n");
-  console.log(`   ${authorizeUrl}\n`);
-  console.log("2. Click Approve/Allow. SmugMug will show a 6-digit PIN on the page (not redirect anywhere).\n");
+  console.log("Open this URL in a browser logged into SmugMug, click Approve, and it'll show a 6-digit PIN:\n");
+  console.log(authorizeUrl);
+  console.log("\nThen run: npx tsx scripts/smugmug-export/get-access-token.ts finish <PIN>");
+}
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const pin = (await rl.question("3. Paste that PIN here: ")).trim();
-  rl.close();
+async function finish(pin: string) {
+  const state = JSON.parse(await readFile(STATE_FILE, "utf-8")) as State;
 
-  // Step 3: exchange the verifier PIN for a permanent access token.
   const accessTokenUrl = `${API_BASE}/services/oauth/1.0a/getAccessToken`;
-  const { authHeader: accAuth } = sign(
+  const authHeader = sign(
     "GET",
     accessTokenUrl,
-    consumerKey,
-    consumerSecret,
+    state.consumerKey,
+    state.consumerSecret,
     { oauth_verifier: pin },
-    requestToken,
-    requestTokenSecret,
+    state.requestToken,
+    state.requestTokenSecret,
   );
-  const accRes = await fetch(accessTokenUrl, { headers: { Authorization: accAuth } });
-  if (!accRes.ok) {
-    console.error(`getAccessToken failed (${accRes.status}): ${await accRes.text()}`);
+  const res = await fetch(accessTokenUrl, { headers: { Authorization: authHeader } });
+  if (!res.ok) {
+    console.error(`getAccessToken failed (${res.status}): ${await res.text()}`);
     process.exit(1);
   }
-  const { oauth_token: accessToken, oauth_token_secret: accessTokenSecret } = parseFormEncoded(await accRes.text());
+  const { oauth_token: accessToken, oauth_token_secret: accessTokenSecret } = parseFormEncoded(await res.text());
 
-  console.log("\nDone. Add these to .env:\n");
-  console.log(`SMUGMUG_API_KEY=${consumerKey}`);
-  console.log(`SMUGMUG_API_SECRET=${consumerSecret}`);
+  console.log("Done. Add these to .env:\n");
+  console.log(`SMUGMUG_API_KEY=${state.consumerKey}`);
+  console.log(`SMUGMUG_API_SECRET=${state.consumerSecret}`);
   console.log(`SMUGMUG_ACCESS_TOKEN=${accessToken}`);
   console.log(`SMUGMUG_ACCESS_TOKEN_SECRET=${accessTokenSecret}`);
+}
+
+async function main() {
+  const [cmd, a, b] = process.argv.slice(2);
+  if (cmd === "start" && a && b) return start(a, b);
+  if (cmd === "finish" && a) return finish(a);
+  console.error("Usage:");
+  console.error("  npx tsx scripts/smugmug-export/get-access-token.ts start <API_KEY> <API_SECRET>");
+  console.error("  npx tsx scripts/smugmug-export/get-access-token.ts finish <PIN>");
+  process.exit(1);
 }
 
 main().catch((err) => {

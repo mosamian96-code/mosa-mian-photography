@@ -58,6 +58,12 @@ services:
       retries: 10
     expose:
       - "5432"
+    # Loopback-only (127.0.0.1), never 0.0.0.0 -- not reachable from the public
+    # internet, only from something already on the VPS itself (an SSH tunnel
+    # terminating here). Temporary, for the SmugMug import step (docs/bulk-import.md);
+    # remove once that's done.
+    ports:
+      - "127.0.0.1:5432:5432"
 
   redis:
     image: redis:7-alpine
@@ -71,6 +77,8 @@ services:
       retries: 10
     expose:
       - "6379"
+    ports:
+      - "127.0.0.1:6379:6379"
 
   caddy:
     image: caddy:2-alpine
