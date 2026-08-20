@@ -398,3 +398,19 @@ export const redirects = pgTable("redirect", {
   newPath: text("new_path").notNull(),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
+
+// Site-wide branding for the real homepage (profile photo, hero photo, tagline, about
+// bio, social links) -- singleton row, fixed id enforces there's ever only one.
+// profileAssetId/heroAssetId reference existing library assets rather than a separate
+// upload path, reusing the same derivative pipeline every other photo goes through.
+export const siteSettings = pgTable("site_settings", {
+  id: text("id").primaryKey().default("singleton"),
+  profileAssetId: text("profile_asset_id").references(() => assets.id, { onDelete: "set null" }),
+  heroAssetId: text("hero_asset_id").references(() => assets.id, { onDelete: "set null" }),
+  tagline: text("tagline"),
+  aboutBio: text("about_bio"),
+  socialInstagram: text("social_instagram"),
+  socialFacebook: text("social_facebook"),
+  socialEmail: text("social_email"),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+});

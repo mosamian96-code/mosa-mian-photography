@@ -29,6 +29,9 @@ export function StudioHeader() {
             <Link href="/studio/watermarks" className="hover:text-neutral-900">
               Watermarks
             </Link>
+            <Link href="/studio/site-settings" className="hover:text-neutral-900">
+              Site settings
+            </Link>
           </nav>
         ) : null}
       </div>

@@ -21,6 +21,16 @@ export type ResolvedGallery = {
   gallery: Gallery;
 };
 
+/** Top-level public folders, for the homepage's portfolio grid (galleries always
+ * belong to a folder -- schema enforces folder_id not null -- so the root only ever
+ * has folders, never bare galleries). */
+export async function listRootFolders(): Promise<Folder[]> {
+  return db.query.folders.findMany({
+    where: and(isNull(folders.parentId), eq(folders.visibility, "public")),
+    orderBy: [asc(folders.position), asc(folders.title)],
+  });
+}
+
 /**
  * Walks a URL's path segments against the folder tree, matching one folder per
  * segment; the final segment may instead be a gallery slug within the last matched

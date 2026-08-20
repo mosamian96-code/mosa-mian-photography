@@ -15,6 +15,7 @@ type Gallery = {
   sortMode: "capture_date" | "upload_date" | "filename" | "manual";
   downloadsPolicy: "off" | "web" | "original";
   watermarkId: string | null;
+  coverAssetId: string | null;
   publishedAt: string | null;
 };
 
@@ -94,6 +95,10 @@ export default function GalleryEditorPage() {
   async function removeItem(assetId: string) {
     await fetch(`/api/galleries/${id}/items?assetId=${assetId}`, { method: "DELETE" });
     load();
+  }
+
+  async function setCover(assetId: string) {
+    await patch({ coverAssetId: assetId });
   }
 
   if (!gallery) return null;
@@ -213,22 +218,42 @@ export default function GalleryEditorPage() {
             Add photos
           </button>
         </div>
+        <p className="mt-1 text-xs text-neutral-400">
+          The cover photo is what shows for this gallery in its folder listing. Hover a photo to set it.
+        </p>
         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-          {items.map((item) => (
-            <figure key={item.assetId} className="group relative aspect-square overflow-hidden rounded bg-neutral-100">
-              {item.thumbUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.thumbUrl} alt={item.filename} className="h-full w-full object-cover" />
-              ) : null}
-              <button
-                type="button"
-                onClick={() => removeItem(item.assetId)}
-                className="absolute right-1 top-1 hidden rounded bg-black/70 px-1.5 py-0.5 text-xs text-white group-hover:block"
+          {items.map((item) => {
+            const isCover = gallery.coverAssetId === item.assetId;
+            return (
+              <figure
+                key={item.assetId}
+                className={`group relative aspect-square overflow-hidden rounded bg-neutral-100 ${isCover ? "ring-2 ring-neutral-900" : ""}`}
               >
-                Remove
-              </button>
-            </figure>
-          ))}
+                {item.thumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.thumbUrl} alt={item.filename} className="h-full w-full object-cover" />
+                ) : null}
+                {isCover ? (
+                  <span className="absolute left-1 top-1 rounded bg-neutral-900 px-1.5 py-0.5 text-xs text-white">Cover</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setCover(item.assetId)}
+                    className="absolute left-1 top-1 hidden rounded bg-black/70 px-1.5 py-0.5 text-xs text-white group-hover:block"
+                  >
+                    Set as cover
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeItem(item.assetId)}
+                  className="absolute right-1 top-1 hidden rounded bg-black/70 px-1.5 py-0.5 text-xs text-white group-hover:block"
+                >
+                  Remove
+                </button>
+              </figure>
+            );
+          })}
         </div>
       </section>
 
