@@ -67,7 +67,16 @@ type Manifest = {
   albums: ExportedAlbum[];
 };
 
-type Progress = { downloadedImageKeys: Record<string, ExportedImage> };
+type Progress = {
+  downloadedImageKeys: Record<string, ExportedImage>;
+  // Full results for albums already walked to completion, keyed by UrlPath -- lets a
+  // restart skip them outright with zero API calls (reusing the cached result for the
+  // final manifest) instead of re-listing every album's images just to confirm
+  // there's nothing new. With ~640 albums, that re-confirmation pass alone took long
+  // enough after a real restart to look like the process had stalled. A one-time
+  // migration export doesn't need to detect images added to SmugMug after the fact.
+  completedAlbumResults?: Record<string, ExportedAlbum>;
+};
 
 async function loadJson<T>(file: string, fallback: T): Promise<T> {
   try {
@@ -188,7 +197,8 @@ async function main() {
 
   const creds = credsFromEnv();
   const progressFile = path.join(outDir, "progress.json");
-  const progress = await loadJson<Progress>(progressFile, { downloadedImageKeys: {} });
+  const progress = await loadJson<Progress>(progressFile, { downloadedImageKeys: {}, completedAlbumResults: {} });
+  progress.completedAlbumResults ??= {};
 
   const authUser = await smugmugGet<{ Response: { User: { NickName: string } } }>(
     `${API_BASE}/api/v2!authuser`,
@@ -212,18 +222,27 @@ async function main() {
         console.log(`[export] excluded: ${album.UrlPath}`);
         continue;
       }
+      const cached = progress.completedAlbumResults![album.UrlPath];
+      if (cached) {
+        // Already fully walked on a previous run -- zero API calls, just reuse it.
+        albums.push(cached);
+        continue;
+      }
+
       console.log(`[export] album: ${album.UrlPath}`);
       // One album failing outright (e.g. its image-list request exhausts retries)
       // must not take down a run meant to process hundreds of albums unattended --
       // log it and move to the next; a re-run picks it back up from scratch since it
       // never got recorded in manifest.json below.
+      let exported: ExportedAlbum;
       try {
-        const exported = await exportAlbum(album, filesDir, creds, progress);
+        exported = await exportAlbum(album, filesDir, creds, progress);
         albums.push(exported);
       } catch (err) {
         console.error(`[export] FAILED album ${album.UrlPath}, skipping: ${err}`);
         continue;
       }
+      progress.completedAlbumResults![album.UrlPath] = exported;
       // Persist progress AND the manifest after every album, not just at the very
       // end -- a crash mid-run should leave a valid, importable manifest.json for
       // everything completed so far, not lose it because the process never reached
