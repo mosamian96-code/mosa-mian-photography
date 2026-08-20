@@ -17,13 +17,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (resolved.type === "gallery") {
     return {
       title: `${resolved.gallery.title} — Mosa Mian Photography`,
-      description: resolved.gallery.description ?? undefined,
+      description: resolved.gallery.description ?? `Photos from ${resolved.gallery.title} — Mosa Mian Photography.`,
       robots: resolved.gallery.visibility === "public" ? undefined : { index: false },
     };
   }
   return {
     title: `${resolved.folder.title} — Mosa Mian Photography`,
-    description: resolved.folder.description ?? undefined,
+    description: resolved.folder.description ?? `${resolved.folder.title} — Mosa Mian Photography.`,
     robots: resolved.folder.visibility === "public" ? undefined : { index: false },
   };
 }
