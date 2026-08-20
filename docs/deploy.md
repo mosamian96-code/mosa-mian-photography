@@ -66,6 +66,12 @@ On the VPS, copy `.env.example` to `.env` and fill in every value:
 - `ADMIN_EMAIL` — the one address allowed to sign in.
 - `B2_*` — from a Backblaze B2 application key scoped to one bucket.
 - `RESEND_API_KEY` — from Resend, free tier.
+- `CONTACT_TO_EMAIL` — where the public contact form (Phase 4, `/contact`) sends its
+  notification email. Form still saves to the database and stays up without this set;
+  it just won't email anyone.
+- `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` — from a Cloudflare Turnstile widget
+  scoped to the site's domain, spam-gates the contact form. If unset, the form accepts
+  submissions without a challenge (fine for local dev, not for production).
 - `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` — compose-only, bootstraps the
   Postgres container (see the comment in `.env.example`).
 

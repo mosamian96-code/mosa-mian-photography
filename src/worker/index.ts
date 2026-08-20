@@ -4,9 +4,10 @@ import { Worker } from "bullmq";
 import { db } from "@/lib/db";
 import { importBatches, jobs } from "@/lib/db/schema";
 import { maybeFinalizeBatch } from "@/lib/ingest/batch";
-import { INGEST_QUEUE_NAME, type IngestJobData } from "@/lib/queue";
+import { INGEST_QUEUE_NAME, WATERMARK_QUEUE_NAME, type IngestJobData, type WatermarkJobData } from "@/lib/queue";
 import { redis } from "@/lib/redis";
 import { processIngestJob } from "./process-ingest";
+import { processWatermarkJob } from "./process-watermark";
 
 // Modest concurrency: the VPS is a 2 vCPU / 4 GB box shared with Postgres, Redis, and
 // the app server. sharp and exiftool are both CPU/memory-heavy per job.
@@ -15,6 +16,18 @@ const CONCURRENCY = 2;
 const worker = new Worker<IngestJobData>(INGEST_QUEUE_NAME, processIngestJob, {
   connection: redis,
   concurrency: CONCURRENCY,
+});
+
+// Lower concurrency: watermark jobs are background/bulk (a whole gallery toggled at
+// once) rather than latency-sensitive, so they shouldn't compete hard with ingest.
+const watermarkWorker = new Worker<WatermarkJobData>(WATERMARK_QUEUE_NAME, processWatermarkJob, {
+  connection: redis,
+  concurrency: 1,
+});
+
+watermarkWorker.on("failed", (job, err) => {
+  if (!job) return;
+  console.error(`[watermark] job ${job.id} (asset ${job.data.assetId}) failed:`, err);
 });
 
 async function upsertJobRow(data: IngestJobData, status: "active" | "completed" | "failed", error?: string) {
@@ -74,10 +87,11 @@ worker.on("failed", async (job, err) => {
 });
 
 console.log(`[ingest worker] listening on queue "${INGEST_QUEUE_NAME}", concurrency ${CONCURRENCY}`);
+console.log(`[watermark worker] listening on queue "${WATERMARK_QUEUE_NAME}", concurrency 1`);
 
 async function shutdown() {
   console.log("[ingest worker] shutting down...");
-  await worker.close();
+  await Promise.all([worker.close(), watermarkWorker.close()]);
   await exiftool.end();
   process.exit(0);
 }

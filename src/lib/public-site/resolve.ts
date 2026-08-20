@@ -162,11 +162,22 @@ export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[
   });
   const metaByAsset = new Map(metadataRows.map((m) => [m.assetId, m]));
 
+  // A gallery with a watermark assigned shows watermarked derivatives on screen
+  // (brief section 9: proofing protection); clean derivatives are laid down first and
+  // watermarked ones overlaid on top of the matching slot, so an asset whose watermark
+  // job hasn't finished yet still falls back to its clean image instead of a 404.
+  const useWatermark = Boolean(gallery.watermarkId);
+
   return rows.map((row) => {
     const derivativesForAsset = allDerivatives.filter((d) => d.assetId === row.assetId);
     const urls: Record<string, string> = {};
-    for (const d of derivativesForAsset) {
+    for (const d of derivativesForAsset.filter((d) => !d.watermarked)) {
       urls[`${d.format}${d.variant}`] = publicDerivativeUrl(d.storageKey);
+    }
+    if (useWatermark) {
+      for (const d of derivativesForAsset.filter((d) => d.watermarked)) {
+        urls[`${d.format}${d.variant}`] = publicDerivativeUrl(d.storageKey);
+      }
     }
     const meta = metaByAsset.get(row.assetId);
     return {

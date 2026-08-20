@@ -46,6 +46,72 @@ export async function generatePublicDerivatives(baseRaster: Buffer): Promise<Gen
   return results;
 }
 
+export type WatermarkPosition = "bottom_right" | "bottom_left" | "top_right" | "top_left" | "center" | "tile";
+
+const GRAVITY_MAP: Record<Exclude<WatermarkPosition, "tile">, string> = {
+  bottom_right: "southeast",
+  bottom_left: "southwest",
+  top_right: "northeast",
+  top_left: "northwest",
+  center: "center",
+};
+
+/** Scales a PNG's own alpha channel by `opacity` (0-1) — sharp's composite() has no
+ * opacity option of its own, so this is done by hand before compositing. */
+async function scaleAlpha(png: Buffer, opacity: number): Promise<Buffer> {
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (let i = 3; i < data.length; i += info.channels) {
+    data[i] = Math.round(data[i] * opacity);
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } }).png().toBuffer();
+}
+
+async function renderWatermarkedOne(
+  baseRaster: Buffer,
+  width: number,
+  format: DerivativeFormat,
+  preparedMark: Buffer,
+  position: WatermarkPosition,
+): Promise<GeneratedDerivative> {
+  const resized = await sharp(baseRaster).rotate().resize({ width, withoutEnlargement: true }).toBuffer();
+  const resizedWidth = (await sharp(resized).metadata()).width ?? width;
+  const markForThisSize = await sharp(preparedMark).resize({ width: Math.round(resizedWidth * 0.2) }).toBuffer();
+
+  let pipeline =
+    position === "tile"
+      ? sharp(resized).composite([{ input: markForThisSize, tile: true, blend: "over" }])
+      : sharp(resized).composite([{ input: markForThisSize, gravity: GRAVITY_MAP[position] }]);
+
+  if (format === "avif") pipeline = pipeline.avif({ quality: 55 });
+  else if (format === "webp") pipeline = pipeline.webp({ quality: 70 });
+  else pipeline = pipeline.jpeg({ quality: 90 });
+
+  const { data, info } = await pipeline.toBuffer({ resolveWithObject: true });
+  return { variant: String(width), format, width: info.width, height: info.height, buffer: data };
+}
+
+/**
+ * Watermarked derivative set (brief section 9): a separate object per size/format
+ * from the clean set, so toggling a gallery's watermark never requires reprocessing
+ * from the original. Opacity is baked into the mark's alpha channel once (scaleAlpha),
+ * then reused for every size — only the mark's own width is rescaled per derivative.
+ */
+export async function generateWatermarkedDerivatives(
+  baseRaster: Buffer,
+  watermarkPng: Buffer,
+  position: WatermarkPosition,
+  opacity: number,
+): Promise<GeneratedDerivative[]> {
+  const preparedMark = await scaleAlpha(watermarkPng, opacity);
+  const results: GeneratedDerivative[] = [];
+  for (const size of SIZES) {
+    results.push(await renderWatermarkedOne(baseRaster, size, "avif", preparedMark, position));
+    results.push(await renderWatermarkedOne(baseRaster, size, "webp", preparedMark, position));
+  }
+  results.push(await renderWatermarkedOne(baseRaster, 2560, "jpeg", preparedMark, position));
+  return results;
+}
+
 /** Tiny inline blur placeholder, stored as a data URI directly in the DB (section 5). */
 export async function generateLqip(baseRaster: Buffer): Promise<string> {
   const tiny = await sharp(baseRaster)

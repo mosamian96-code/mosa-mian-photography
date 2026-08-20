@@ -24,3 +24,20 @@ export const ingestQueue = new Queue<IngestJobData>(INGEST_QUEUE_NAME, {
     removeOnFail: false,
   },
 });
+
+export const WATERMARK_QUEUE_NAME = "watermark";
+
+export type WatermarkJobData = {
+  assetId: string;
+  watermarkId: string;
+};
+
+export const watermarkQueue = new Queue<WatermarkJobData>(WATERMARK_QUEUE_NAME, {
+  connection: redis,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 5000 },
+    removeOnComplete: { age: 60 * 60 * 24 * 7 },
+    removeOnFail: false,
+  },
+});

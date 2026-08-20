@@ -39,6 +39,17 @@ export function presignGetUrl(key: string, expiresInSeconds = 300) {
   return getSignedUrl(b2, command, { expiresIn: expiresInSeconds });
 }
 
+/** Same as presignGetUrl, but forces a browser "Save As" with the given filename
+ * instead of an inline view — for client-gallery downloads (brief section 9). */
+export function presignDownloadUrl(key: string, filename: string, expiresInSeconds = 300) {
+  const command = new GetObjectCommand({
+    Bucket: B2_BUCKET,
+    Key: key,
+    ResponseContentDisposition: `attachment; filename="${filename.replace(/"/g, "")}"`,
+  });
+  return getSignedUrl(b2, command, { expiresIn: expiresInSeconds });
+}
+
 export async function putObject(key: string, body: Buffer | string, contentType: string) {
   await b2.send(
     new PutObjectCommand({ Bucket: B2_BUCKET, Key: key, Body: body, ContentType: contentType }),
@@ -133,6 +144,11 @@ export function derivativeKey(sha256: string, variant: string, format: string) {
 
 export function watermarkedKey(sha256: string, variant: string, format: string) {
   return `watermarked/${sha256}/${variant}.${format}`;
+}
+
+/** Storage key for an admin-uploaded watermark mark image itself (not a derivative). */
+export function watermarkMarkKey(watermarkId: string) {
+  return `watermarks/${watermarkId}.png`;
 }
 
 /** Public URL for a derivative, proxied through /api/cdn (see that route for why). */

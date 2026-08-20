@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, derivatives, galleries, galleryItems } from "@/lib/db/schema";
+import { enqueueWatermarkForGallery } from "@/lib/ingest/watermark-enqueue";
 import { hashPassword } from "@/lib/password";
 import { requireAdminSession } from "@/lib/require-admin";
 import { publicDerivativeUrl } from "@/lib/storage";
@@ -56,6 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     sortMode: "capture_date" | "upload_date" | "filename" | "manual";
     downloadsPolicy: "off" | "web" | "original";
     coverAssetId: string;
+    watermarkId: string | null;
     publish: boolean;
   }>;
 
@@ -67,6 +69,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [gallery] = await db.update(galleries).set(patch).where(eq(galleries.id, id)).returning();
   if (!gallery) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Assigning (or changing) a gallery's watermark generates watermarked derivatives
+  // for every item currently in it — new items get their own job on add (see
+  // items/route.ts). Clearing it (null) leaves existing watermarked derivatives in
+  // place rather than deleting them; the public site just stops serving them.
+  if (body.watermarkId) {
+    await enqueueWatermarkForGallery(id, body.watermarkId);
+  }
+
   return NextResponse.json(gallery);
 }
 

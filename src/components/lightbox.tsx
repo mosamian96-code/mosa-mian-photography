@@ -2,9 +2,97 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GalleryImage } from "@/lib/public-site/resolve";
+import type { CommentItem } from "./gallery-view";
+
+type LightboxClientControls = {
+  clientAccessId: string;
+  canFavorite: boolean;
+  canComment: boolean;
+  downloadsEnabled: boolean;
+  favorited: Set<string>;
+  onToggleFavorite: (assetId: string) => void;
+  commentsByAsset: Record<string, CommentItem[]>;
+  onAddComment: (assetId: string, body: string) => void;
+};
 
 function pickSrc(urls: Record<string, string>, variant: string) {
   return { avif: urls[`avif${variant}`], webp: urls[`webp${variant}`] };
+}
+
+function ClientProofingPanel({
+  assetId,
+  controls,
+}: {
+  assetId: string;
+  controls: LightboxClientControls;
+}) {
+  const [draft, setDraft] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const assetComments = controls.commentsByAsset[assetId] ?? [];
+
+  async function submitComment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft.trim()) return;
+    setSubmitting(true);
+    await controls.onAddComment(assetId, draft.trim());
+    setSubmitting(false);
+    setDraft("");
+  }
+
+  return (
+    <div className="mt-3 flex w-full max-w-xl flex-col items-center gap-2 text-sm">
+      <div className="flex items-center gap-4">
+        {controls.canFavorite ? (
+          <button
+            type="button"
+            onClick={() => controls.onToggleFavorite(assetId)}
+            className="flex items-center gap-1 text-white/70 hover:text-white"
+          >
+            <span className={controls.favorited.has(assetId) ? "text-red-400" : ""}>
+              {controls.favorited.has(assetId) ? "♥" : "♡"}
+            </span>
+            Favorite
+          </button>
+        ) : null}
+        {controls.downloadsEnabled ? (
+          <a
+            href={`/api/public/download?clientAccessId=${controls.clientAccessId}&assetId=${assetId}`}
+            className="text-white/70 hover:text-white"
+          >
+            Download
+          </a>
+        ) : null}
+      </div>
+
+      {controls.canComment ? (
+        <div className="w-full">
+          {assetComments.length > 0 ? (
+            <ul className="mb-2 max-h-24 w-full space-y-1 overflow-y-auto text-left text-xs text-white/70">
+              {assetComments.map((c) => (
+                <li key={c.id}>{c.body}</li>
+              ))}
+            </ul>
+          ) : null}
+          <form onSubmit={submitComment} className="flex w-full gap-2">
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Leave a comment…"
+              className="flex-1 rounded border border-white/20 bg-white/10 px-2 py-1 text-xs text-white outline-none placeholder:text-white/40 focus:border-white/50"
+            />
+            <button
+              type="submit"
+              disabled={submitting || !draft.trim()}
+              className="rounded border border-white/20 px-2 py-1 text-xs text-white/80 hover:text-white disabled:opacity-40"
+            >
+              Send
+            </button>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function exifLine(image: GalleryImage) {
@@ -23,11 +111,13 @@ export default function Lightbox({
   index,
   onClose,
   onNavigate,
+  clientControls,
 }: {
   images: GalleryImage[];
   index: number;
   onClose: () => void;
   onNavigate: (index: number) => void;
+  clientControls?: LightboxClientControls;
 }) {
   const [slideshowOn, setSlideshowOn] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -125,6 +215,8 @@ export default function Lightbox({
       </picture>
 
       <p className="mt-4 text-xs tracking-wide text-white/60">{exifLine(current)}</p>
+
+      {clientControls ? <ClientProofingPanel assetId={current.assetId} controls={clientControls} /> : null}
     </div>
   );
 }

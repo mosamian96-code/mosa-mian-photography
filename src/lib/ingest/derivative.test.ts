@@ -4,7 +4,12 @@ import path from "node:path";
 import { exiftool } from "exiftool-vendored";
 import sharp from "sharp";
 import { afterAll, describe, expect, it } from "vitest";
-import { generateLqip, generatePublicDerivatives, normalizeOrientation } from "./derivative";
+import {
+  generateLqip,
+  generatePublicDerivatives,
+  generateWatermarkedDerivatives,
+  normalizeOrientation,
+} from "./derivative";
 
 afterAll(() => exiftool.end());
 
@@ -132,5 +137,43 @@ describe("generateLqip", () => {
     const lqip = await generateLqip(source);
     expect(lqip).toMatch(/^data:image\/jpeg;base64,/);
     expect(lqip.length).toBeLessThan(source.length);
+  });
+});
+
+describe("generateWatermarkedDerivatives", () => {
+  it("actually composites the mark — different opacities produce different pixels", async () => {
+    const source = await sharp({
+      create: { width: 800, height: 600, channels: 3, background: { r: 100, g: 100, b: 100 } },
+    })
+      .jpeg()
+      .toBuffer();
+    const mark = await sharp({
+      create: { width: 200, height: 100, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+
+    const faint = await generateWatermarkedDerivatives(source, mark, "bottom_right", 0.1);
+    const strong = await generateWatermarkedDerivatives(source, mark, "bottom_right", 0.9);
+
+    expect(faint.length).toBe(strong.length);
+    expect(Buffer.compare(faint[0].buffer, strong[0].buffer)).not.toBe(0);
+  });
+
+  it("produces one derivative per size/format, same as the clean set", async () => {
+    const source = await sharp({
+      create: { width: 800, height: 600, channels: 3, background: { r: 50, g: 50, b: 50 } },
+    })
+      .jpeg()
+      .toBuffer();
+    const mark = await sharp({
+      create: { width: 100, height: 100, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+
+    const clean = await generatePublicDerivatives(source);
+    const watermarked = await generateWatermarkedDerivatives(source, mark, "center", 0.5);
+    expect(watermarked.length).toBe(clean.length);
   });
 });

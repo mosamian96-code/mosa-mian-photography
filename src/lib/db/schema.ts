@@ -269,6 +269,9 @@ export const galleries = pgTable(
     downloadsPolicy: text("downloads_policy", { enum: ["off", "web", "original"] })
       .notNull()
       .default("off"),
+    // References `watermarks`, defined further down this file — forward reference,
+    // same AnyPgColumn callback pattern as folders' self-reference above.
+    watermarkId: text("watermark_id").references((): AnyPgColumn => watermarks.id, { onDelete: "set null" }),
     publishedAt: timestamp("published_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
@@ -292,3 +295,95 @@ export const galleryItems = pgTable(
     index("gallery_item_gallery_id_idx").on(t.galleryId),
   ],
 );
+
+// Phase 4: clients. Token-linked private galleries, favorites, comments,
+// watermarking, and the contact form (brief section 9 / section 4).
+
+export const watermarks = pgTable("watermark", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  storageKey: text("storage_key").notNull(),
+  position: text("position", {
+    enum: ["bottom_right", "bottom_left", "top_right", "top_left", "center", "tile"],
+  })
+    .notNull()
+    .default("bottom_right"),
+  opacity: doublePrecision("opacity").notNull().default(0.5),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+});
+
+export const clientAccess = pgTable(
+  "client_access",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    galleryId: text("gallery_id")
+      .notNull()
+      .references(() => galleries.id, { onDelete: "cascade" }),
+    token: text("token")
+      .notNull()
+      .unique()
+      .$defaultFn(() => crypto.randomUUID().replace(/-/g, "")),
+    email: text("email"),
+    passwordHash: text("password_hash"),
+    expiresAt: timestamp("expires_at", { mode: "date" }),
+    // Per-link, not per-gallery: two clients on the same gallery can have different
+    // permissions (brief section 4).
+    downloadsEnabled: boolean("downloads_enabled").notNull().default(true),
+    canFavorite: boolean("can_favorite").notNull().default(true),
+    canComment: boolean("can_comment").notNull().default(true),
+    revokedAt: timestamp("revoked_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [index("client_access_gallery_id_idx").on(t.galleryId)],
+);
+
+export const favorites = pgTable(
+  "favorite",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    clientAccessId: text("client_access_id")
+      .notNull()
+      .references(() => clientAccess.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [unique("favorite_client_asset_unique").on(t.clientAccessId, t.assetId)],
+);
+
+export const comments = pgTable(
+  "comment",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    clientAccessId: text("client_access_id")
+      .notNull()
+      .references(() => clientAccess.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    readAt: timestamp("read_at", { mode: "date" }),
+  },
+  (t) => [index("comment_client_access_id_idx").on(t.clientAccessId)],
+);
+
+export const contactSubmissions = pgTable("contact_submission", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  readAt: timestamp("read_at", { mode: "date" }),
+});

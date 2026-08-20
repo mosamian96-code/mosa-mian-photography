@@ -1,7 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { galleryItems } from "@/lib/db/schema";
+import { galleries, galleryItems } from "@/lib/db/schema";
+import { enqueueWatermarkForAssets } from "@/lib/ingest/watermark-enqueue";
 import { requireAdminSession } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
@@ -24,6 +25,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .insert(galleryItems)
     .values(assetIds.map((assetId, i) => ({ galleryId, assetId, position: startPosition + i })))
     .onConflictDoNothing();
+
+  // If this gallery already has a watermark assigned, newly added items need their
+  // own watermarked derivatives too — existing items were covered when the watermark
+  // was originally assigned (see galleries/[id]/route.ts PATCH).
+  const gallery = await db.query.galleries.findFirst({
+    where: eq(galleries.id, galleryId),
+    columns: { watermarkId: true },
+  });
+  if (gallery?.watermarkId) {
+    await enqueueWatermarkForAssets(assetIds, gallery.watermarkId);
+  }
 
   return NextResponse.json({ ok: true, added: assetIds.length });
 }

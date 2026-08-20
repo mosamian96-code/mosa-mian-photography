@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { ClientLinksSection } from "./client-links";
 
 type Gallery = {
   id: string;
@@ -13,8 +14,11 @@ type Gallery = {
   visibility: "public" | "unlisted" | "password" | "private";
   sortMode: "capture_date" | "upload_date" | "filename" | "manual";
   downloadsPolicy: "off" | "web" | "original";
+  watermarkId: string | null;
   publishedAt: string | null;
 };
+
+type Watermark = { id: string; name: string };
 
 type Item = {
   assetId: string;
@@ -32,6 +36,7 @@ export default function GalleryEditorPage() {
   const { id } = useParams<{ id: string }>();
   const [gallery, setGallery] = useState<Gallery | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [watermarks, setWatermarks] = useState<Watermark[]>([]);
   const [password, setPassword] = useState("");
   const [picking, setPicking] = useState(false);
   const [pickerAssets, setPickerAssets] = useState<LibraryAsset[]>([]);
@@ -49,6 +54,12 @@ export default function GalleryEditorPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/id-change; setState happens in load()'s async continuation, not synchronously here.
     load();
   }, [load]);
+
+  useEffect(() => {
+    fetch("/api/watermarks")
+      .then((res) => res.json())
+      .then((data) => setWatermarks(data.items));
+  }, []);
 
   async function patch(fields: Record<string, unknown>) {
     setSaving(true);
@@ -174,6 +185,21 @@ export default function GalleryEditorPage() {
             <option value="original">Original</option>
           </select>
         </label>
+        <label className="block text-sm">
+          <span className="text-neutral-500">Watermark</span>
+          <select
+            value={gallery.watermarkId ?? ""}
+            onChange={(e) => patch({ watermarkId: e.target.value || null })}
+            className="mt-1 w-full rounded border border-neutral-300 px-3 py-1.5 outline-none focus:border-neutral-900"
+          >
+            <option value="">None</option>
+            {watermarks.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="mt-8">
@@ -205,6 +231,8 @@ export default function GalleryEditorPage() {
           ))}
         </div>
       </section>
+
+      <ClientLinksSection galleryId={gallery.id} />
 
       {picking ? (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-6">
