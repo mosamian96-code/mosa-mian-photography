@@ -6,27 +6,32 @@
 // title/caption/keywords/gallery membership plus each image's original SmugMug URL
 // (for the redirect map, built later by import.ts).
 //
+// Field names below were corrected against this account's real API responses, not
+// guessed from docs: `!albumlist` only returns {Uri, UrlPath, Name} -- no AlbumKey or
+// ImageCount, unlike some community client examples assume. AlbumKey comes from
+// parsing Uri ("/api/v2/album/6QV6jP" -> "6QV6jP"); the declared image count comes
+// from the first `!images` page's Pages.Total instead of an extra per-album request.
+// The real download field is `ArchivedUri` directly on each AlbumImage (confirmed to
+// be true original resolution for an account with MaxPhotoDownloadSize=Original,
+// where ArchivedSize == OriginalSize) -- there is no Uris.ImageDownload field at all.
+//
 // Resumable: re-running skips any image already recorded as downloaded in
 // progress.json, so a multi-day run surviving a restart just picks back up.
 // Rate-limited: see scripts/smugmug-export/client.ts.
 //
-// Usage: npx tsx scripts/smugmug-export/export.ts <output-dir>
+// Usage: npx tsx scripts/smugmug-export/export.ts <output-dir> [exclude-prefix,...]
+//   e.g. npx tsx scripts/smugmug-export/export.ts /e/smugmug-export /Android-Auto-Upload,/Android-Backup
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { classifyKind } from "../../src/lib/ingest/classify";
 import { credsFromEnv, type OAuthCredentials } from "./oauth";
 import { smugmugDownload, smugmugGet } from "./client";
 
 const API_BASE = "https://api.smugmug.com";
 
-type SmugAlbum = {
-  Name: string;
-  UrlPath: string;
-  AlbumKey: string;
-  ImageCount: number;
-  Description?: string;
-};
+type SmugAlbumSummary = { Uri: string; Name: string; UrlPath: string };
 
 type SmugAlbumImage = {
   FileName: string;
@@ -35,7 +40,7 @@ type SmugAlbumImage = {
   Keywords?: string;
   ImageKey: string;
   ArchivedUri?: string;
-  Uris?: { ImageDownload?: { Uri: string } };
+  Uris?: { LargestImage?: { Uri: string } };
 };
 
 type ExportedImage = {
@@ -72,41 +77,57 @@ async function loadJson<T>(file: string, fallback: T): Promise<T> {
   }
 }
 
+function albumKeyFromUri(uri: string): string {
+  return uri.split("/").filter(Boolean).pop() ?? "";
+}
+
 async function getOriginalDownloadUrl(image: SmugAlbumImage, creds: OAuthCredentials): Promise<string | null> {
-  if (image.Uris?.ImageDownload) {
+  if (image.ArchivedUri) return image.ArchivedUri;
+  if (image.Uris?.LargestImage) {
     try {
-      const res = await smugmugGet<{ Response: { ImageDownload: { Url: string } } }>(
-        `${API_BASE}${image.Uris.ImageDownload.Uri}`,
+      const res = await smugmugGet<{ Response: { LargestImage: { Url: string } } }>(
+        `${API_BASE}${image.Uris.LargestImage.Uri}`,
         creds,
       );
-      return res.Response.ImageDownload.Url;
+      return res.Response.LargestImage.Url;
     } catch (err) {
-      console.warn(`[export] ImageDownload lookup failed for ${image.ImageKey}, falling back: ${err}`);
+      console.warn(`[export] LargestImage lookup failed for ${image.ImageKey}: ${err}`);
     }
   }
-  return image.ArchivedUri ?? null;
+  return null;
 }
 
 async function exportAlbum(
-  album: SmugAlbum,
+  album: SmugAlbumSummary,
   filesDir: string,
   creds: OAuthCredentials,
   progress: Progress,
 ): Promise<ExportedAlbum> {
+  const albumKey = albumKeyFromUri(album.Uri);
   const images: ExportedImage[] = [];
+  let declaredImageCount = 0;
   let start = 1;
   const pageSize = 100;
 
   for (;;) {
     const page = await smugmugGet<{
       Response: { AlbumImage?: SmugAlbumImage[]; Pages: { Total: number } };
-    }>(`${API_BASE}/api/v2/album/${album.AlbumKey}!images?start=${start}&count=${pageSize}`, creds);
+    }>(`${API_BASE}/api/v2/album/${albumKey}!images?start=${start}&count=${pageSize}`, creds);
+    declaredImageCount = page.Response.Pages.Total;
 
     const items = page.Response.AlbumImage ?? [];
     for (const img of items) {
       const existing = progress.downloadedImageKeys[img.ImageKey];
       if (existing) {
         images.push(existing);
+        continue;
+      }
+
+      // Videos and anything else this system doesn't ingest (brief section 1: "not
+      // building video hosting") -- skip before downloading, not after, so bandwidth
+      // and the external drive's space aren't spent on files that can never be used.
+      if (!classifyKind(img.FileName)) {
+        console.log(`[export] skipping unsupported file type: ${album.Name}/${img.FileName}`);
         continue;
       }
 
@@ -143,13 +164,14 @@ async function exportAlbum(
     start += pageSize;
   }
 
-  return { name: album.Name, urlPath: album.UrlPath, declaredImageCount: album.ImageCount, images };
+  return { name: album.Name, urlPath: album.UrlPath, declaredImageCount, images };
 }
 
 async function main() {
   const outDir = process.argv[2];
+  const excludePrefixes = (process.argv[3] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!outDir) {
-    console.error("Usage: npx tsx scripts/smugmug-export/export.ts <output-dir>");
+    console.error("Usage: npx tsx scripts/smugmug-export/export.ts <output-dir> [exclude-prefix,...]");
     process.exit(1);
   }
   const filesDir = path.join(outDir, "files");
@@ -165,18 +187,23 @@ async function main() {
   );
   const nickname = authUser.Response.User.NickName;
   console.log(`[export] authenticated as ${nickname}`);
+  if (excludePrefixes.length > 0) console.log(`[export] excluding: ${excludePrefixes.join(", ")}`);
 
   const albums: ExportedAlbum[] = [];
   let start = 1;
   const pageSize = 100;
   for (;;) {
     const page = await smugmugGet<{
-      Response: { AlbumList?: SmugAlbum[]; Pages: { Total: number } };
+      Response: { AlbumList?: SmugAlbumSummary[]; Pages: { Total: number } };
     }>(`${API_BASE}/api/v2/folder/user/${nickname}!albumlist?start=${start}&count=${pageSize}`, creds);
 
     const items = page.Response.AlbumList ?? [];
     for (const album of items) {
-      console.log(`[export] album: ${album.UrlPath} (${album.ImageCount} images declared)`);
+      if (excludePrefixes.some((p) => album.UrlPath === p || album.UrlPath.startsWith(p + "/"))) {
+        console.log(`[export] excluded: ${album.UrlPath}`);
+        continue;
+      }
+      console.log(`[export] album: ${album.UrlPath}`);
       const exported = await exportAlbum(album, filesDir, creds, progress);
       albums.push(exported);
       // Persist progress after every album, not just at the very end -- a crash
@@ -197,13 +224,8 @@ async function main() {
 
   console.log(`\n[export] done.`);
   console.log(`  Albums: ${albums.length}`);
-  console.log(`  Images downloaded: ${totalImages} (SmugMug declared ${declaredTotal} across all albums)`);
+  console.log(`  Images downloaded: ${totalImages} (SmugMug declared ${declaredTotal} across all albums, before filtering unsupported file types)`);
   console.log(`  Total bytes: ${totalBytes.toLocaleString()} (${(totalBytes / 1e9).toFixed(2)} GB)`);
-  if (totalImages !== declaredTotal) {
-    console.log(
-      `  ⚠ Mismatch: ${declaredTotal - totalImages} image(s) declared by SmugMug were not downloaded (see [export] warnings above). Investigate before trusting this export.`,
-    );
-  }
   console.log(`\nNext: cross-check these totals against SmugMug's own account overview, then run:`);
   console.log(`  npx tsx scripts/smugmug-export/import.ts ${outDir}`);
 }
