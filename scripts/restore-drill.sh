@@ -46,7 +46,21 @@ docker run -d --name mmp-restore-drill \
   postgres:16-alpine >/dev/null
 
 echo "[restore-drill] waiting for it to come up..."
-until docker exec mmp-restore-drill pg_isready -U mmp >/dev/null 2>&1; do sleep 1; done
+# The official postgres image's entrypoint accepts connections briefly during its own
+# initdb bootstrap, then shuts down and restarts once before it's actually ready --
+# a single successful pg_isready can land in that brief window, not the real one
+# (confirmed live: the very next command failed with "database system is shutting
+# down"). Require several consecutive successful checks, not just one, before
+# trusting it.
+consecutive_ready=0
+until [ "$consecutive_ready" -ge 3 ]; do
+  if docker exec mmp-restore-drill pg_isready -U mmp >/dev/null 2>&1; then
+    consecutive_ready=$((consecutive_ready + 1))
+  else
+    consecutive_ready=0
+  fi
+  sleep 1
+done
 
 echo "[restore-drill] restoring dump (log kept at $TMP_DIR/restore.log until this script exits)..."
 docker exec -i mmp-restore-drill psql -U mmp -d mmp < "$TMP_DIR/backup.sql" > "$TMP_DIR/restore.log" 2>&1 || true
