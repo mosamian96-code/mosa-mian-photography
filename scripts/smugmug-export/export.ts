@@ -79,9 +79,22 @@ type Progress = {
 };
 
 async function loadJson<T>(file: string, fallback: T): Promise<T> {
+  let raw: string;
   try {
-    return JSON.parse(await readFile(file, "utf-8")) as T;
+    raw = await readFile(file, "utf-8");
   } catch {
+    return fallback; // doesn't exist yet -- normal on a first run, nothing to warn about
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    // The file exists but isn't valid JSON -- almost certainly two processes writing
+    // to it concurrently (confirmed live: interleaved/corrupted log output from
+    // exactly that happening). Silently falling back here would discard however much
+    // progress was recorded before the corruption with no visible trace, which is
+    // precisely what made a real stall look like mysterious flakiness earlier. Loud
+    // on purpose.
+    console.error(`[export] WARNING: ${file} exists but is not valid JSON (${err}) -- starting from empty progress instead of silently losing potentially hours of it. If this happens, check for more than one export process running at once.`);
     return fallback;
   }
 }
