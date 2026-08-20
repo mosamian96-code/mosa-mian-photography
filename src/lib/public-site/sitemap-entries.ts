@@ -1,6 +1,7 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { folders, galleries } from "@/lib/db/schema";
+import { listPublicKeywords } from "@/lib/public-site/resolve";
 
 type Folder = typeof folders.$inferSelect;
 
@@ -40,6 +41,12 @@ export async function getAllPublicPaths(): Promise<{ path: string; lastModified?
       path: "/" + [...segments, gallery.slug].join("/"),
       lastModified: gallery.publishedAt ?? undefined,
     });
+  }
+
+  const keywordCounts = await listPublicKeywords();
+  paths.push({ path: "/keywords" });
+  for (const k of keywordCounts) {
+    paths.push({ path: `/keywords/${encodeURIComponent(k.value)}` });
   }
 
   return paths;

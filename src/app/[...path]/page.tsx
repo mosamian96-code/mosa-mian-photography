@@ -4,7 +4,9 @@ import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { notFound, permanentRedirect } from "next/navigation";
 import { GalleryPasswordForm } from "@/components/gallery-password-form";
+import GalleryMap from "@/components/gallery-map-loader";
 import { GalleryView } from "@/components/gallery-view";
+import { PublicHeader } from "@/components/public-header";
 import { db } from "@/lib/db";
 import { redirects } from "@/lib/db/schema";
 import { gallerySessionCookieName, verifyGalleryToken } from "@/lib/public-site/gallery-auth";
@@ -78,9 +80,11 @@ export default async function PublicPathPage({ params }: Props) {
     }
 
     const images = await loadGalleryImages(gallery);
+    const hasGeotagged = images.some((img) => img.gpsLat != null && img.gpsLon != null);
 
     return (
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <PublicHeader />
         <Breadcrumb trail={trail} />
         <h1
           className="mt-4 text-2xl text-neutral-900"
@@ -89,6 +93,7 @@ export default async function PublicPathPage({ params }: Props) {
           {gallery.title}
         </h1>
         {gallery.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{gallery.description}</p> : null}
+        {hasGeotagged ? <GalleryMap images={images} /> : null}
         <div className="mt-6">
           {images.length > 0 ? (
             <GalleryView images={images} />
@@ -104,6 +109,7 @@ export default async function PublicPathPage({ params }: Props) {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <PublicHeader />
       <Breadcrumb trail={trail} />
       <h1 className="mt-4 text-2xl text-neutral-900" style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}>
         {folder.title}
