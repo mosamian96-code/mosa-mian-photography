@@ -28,7 +28,10 @@ echo "[backup] dumping database..."
 docker compose exec -T postgres pg_dump -U "${POSTGRES_USER:-mmp}" "${POSTGRES_DB:-mmp}" | gzip > "$DUMP_FILE"
 
 echo "[backup] encrypting..."
-openssl enc -aes-256-gcm -pbkdf2 -iter 100000 -salt -pass "pass:${BACKUP_ENCRYPTION_KEY}" -in "$DUMP_FILE" -out "$ENC_FILE"
+# CBC, not GCM: openssl's `enc` subcommand has never supported AEAD ciphers (GCM needs
+# separate auth-tag handling that `enc`'s plain stream interface doesn't provide) --
+# this isn't a version-specific gap, `-aes-256-gcm` fails the same way on any OpenSSL.
+openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt -pass "pass:${BACKUP_ENCRYPTION_KEY}" -in "$DUMP_FILE" -out "$ENC_FILE"
 
 echo "[backup] uploading to B2 (bucket: ${B2_BACKUP_BUCKET})..."
 RCLONE_CONFIG_MMPBACKUP_TYPE=b2 \

@@ -1,0 +1,5 @@
+# Shell scripts run directly on the VPS host (not through a Docker build step that
+# would otherwise mask this) -- a CRLF shebang line breaks with "env: bash\r: No such
+# file or directory". Force LF in the repository and on every checkout/archive,
+# regardless of which platform (this one included) checks the file out.
+*.sh text eol=lf

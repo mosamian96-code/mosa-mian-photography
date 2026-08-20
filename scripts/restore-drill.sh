@@ -36,7 +36,7 @@ echo "[restore-drill] latest backup: $LATEST"
 rclone copyto "mmpbackup:${B2_BACKUP_BUCKET}/db/${LATEST}" "$TMP_DIR/backup.sql.gz.enc"
 
 echo "[restore-drill] decrypting..."
-openssl enc -d -aes-256-gcm -pbkdf2 -iter 100000 -pass "pass:${BACKUP_ENCRYPTION_KEY}" \
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass "pass:${BACKUP_ENCRYPTION_KEY}" \
   -in "$TMP_DIR/backup.sql.gz.enc" -out "$TMP_DIR/backup.sql.gz"
 gunzip "$TMP_DIR/backup.sql.gz"
 

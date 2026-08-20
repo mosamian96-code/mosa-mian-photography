@@ -44,7 +44,7 @@ anything.
 
 `scripts/backup-db.sh`: `pg_dump` via `docker compose exec postgres` (so the dump
 always uses the exact pg_dump binary matching the running server — a mismatched client
-version is a common reason restores silently fail), gzip, encrypt with AES-256-GCM
+version is a common reason restores silently fail), gzip, encrypt with AES-256-CBC
 (`openssl enc`, PBKDF2-derived key from `BACKUP_ENCRYPTION_KEY`), upload to
 `B2_BACKUP_BUCKET` via `rclone`, delete the local temp files.
 
