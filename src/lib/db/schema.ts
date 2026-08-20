@@ -387,3 +387,14 @@ export const contactSubmissions = pgTable("contact_submission", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   readAt: timestamp("read_at", { mode: "date" }),
 });
+
+// Phase 5: migration off SmugMug. Old SmugMug URLs -> new gallery/folder paths, so
+// links clients already have keep working (brief section 14 step 3).
+export const redirects = pgTable("redirect", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  oldPath: text("old_path").notNull().unique(),
+  newPath: text("new_path").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+});

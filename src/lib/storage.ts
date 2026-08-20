@@ -1,10 +1,12 @@
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -65,11 +67,37 @@ export async function deleteObject(key: string) {
   await b2.send(new DeleteObjectCommand({ Bucket: B2_BUCKET, Key: key }));
 }
 
+/** Server-side copy (no download/re-upload) -- used to rekey a bulk-imported object
+ * from wherever rclone dropped it to the canonical sha256-addressed path. */
+export async function copyObject(fromKey: string, toKey: string) {
+  await b2.send(
+    new CopyObjectCommand({ Bucket: B2_BUCKET, CopySource: `${B2_BUCKET}/${fromKey}`, Key: toKey }),
+  );
+}
+
 export async function getObjectBuffer(key: string) {
   const result = await b2.send(new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }));
   const bytes = await result.Body?.transformToByteArray();
   if (!bytes) throw new Error(`empty body for ${key}`);
   return Buffer.from(bytes);
+}
+
+/** Lists every object key under a prefix, paginating transparently (section 6's
+ * "scan bucket" job needs every originals/ key, which a single ListObjectsV2 call
+ * won't return once the library is larger than 1000 objects). */
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const result = await b2.send(
+      new ListObjectsV2Command({ Bucket: B2_BUCKET, Prefix: prefix, ContinuationToken: continuationToken }),
+    );
+    for (const obj of result.Contents ?? []) {
+      if (obj.Key) keys.push(obj.Key);
+    }
+    continuationToken = result.NextContinuationToken;
+  } while (continuationToken);
+  return keys;
 }
 
 export async function headObject(key: string) {

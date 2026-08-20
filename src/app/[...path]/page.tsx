@@ -1,9 +1,12 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { notFound, permanentRedirect } from "next/navigation";
 import { GalleryPasswordForm } from "@/components/gallery-password-form";
 import { GalleryView } from "@/components/gallery-view";
+import { db } from "@/lib/db";
+import { redirects } from "@/lib/db/schema";
 import { gallerySessionCookieName, verifyGalleryToken } from "@/lib/public-site/gallery-auth";
 import { loadGalleryImages, resolvePath } from "@/lib/public-site/resolve";
 
@@ -49,7 +52,14 @@ function Breadcrumb({ trail }: { trail: { title: string; href: string }[] }) {
 export default async function PublicPathPage({ params }: Props) {
   const { path } = await params;
   const resolved = await resolvePath(path);
-  if (!resolved) notFound();
+  if (!resolved) {
+    // Old SmugMug links clients already have (brief section 14 step 3) -- checked only
+    // on an otherwise-404 path, so it costs nothing on the hot path of a normal visit.
+    const oldPath = "/" + path.join("/");
+    const match = await db.query.redirects.findFirst({ where: eq(redirects.oldPath, oldPath) });
+    if (match) permanentRedirect(match.newPath);
+    notFound();
+  }
 
   const trail = resolved.breadcrumb.map((f, i) => ({
     title: f.title,
