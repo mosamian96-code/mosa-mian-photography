@@ -131,33 +131,42 @@ async function exportAlbum(
         continue;
       }
 
-      const downloadUrl = await getOriginalDownloadUrl(img, creds);
-      if (!downloadUrl) {
-        console.warn(`[export] no download URL for ${album.Name}/${img.FileName} (${img.ImageKey}) -- skipped`);
-        continue;
+      // A single image that fails even after client.ts's own retries (a genuinely
+      // dead link, a permanent 404, etc.) must not take down a run that's meant to
+      // process thousands of images unattended over days -- log it and move on. It
+      // stays absent from progress.json, so a future re-run tries it again rather
+      // than silently treating it as done.
+      try {
+        const downloadUrl = await getOriginalDownloadUrl(img, creds);
+        if (!downloadUrl) {
+          console.warn(`[export] no download URL for ${album.Name}/${img.FileName} (${img.ImageKey}) -- skipped`);
+          continue;
+        }
+
+        const buffer = await smugmugDownload(downloadUrl, creds);
+        const sha256 = createHash("sha256").update(buffer).digest("hex");
+        const localFile = `${img.ImageKey}-${img.FileName}`.replace(/[^\w.\-]/g, "_");
+        await writeFile(path.join(filesDir, localFile), buffer);
+
+        const exported: ExportedImage = {
+          imageKey: img.ImageKey,
+          filename: img.FileName,
+          caption: img.Caption ?? "",
+          title: img.Title ?? "",
+          keywords: (img.Keywords ?? "")
+            .split(/[,;]/)
+            .map((k) => k.trim())
+            .filter(Boolean),
+          sha256,
+          byteSize: buffer.length,
+          localFile,
+        };
+        images.push(exported);
+        progress.downloadedImageKeys[img.ImageKey] = exported;
+        console.log(`[export] downloaded ${album.Name}/${img.FileName} (${(buffer.length / 1e6).toFixed(1)}MB)`);
+      } catch (err) {
+        console.error(`[export] FAILED ${album.Name}/${img.FileName} (${img.ImageKey}), skipping: ${err}`);
       }
-
-      const buffer = await smugmugDownload(downloadUrl, creds);
-      const sha256 = createHash("sha256").update(buffer).digest("hex");
-      const localFile = `${img.ImageKey}-${img.FileName}`.replace(/[^\w.\-]/g, "_");
-      await writeFile(path.join(filesDir, localFile), buffer);
-
-      const exported: ExportedImage = {
-        imageKey: img.ImageKey,
-        filename: img.FileName,
-        caption: img.Caption ?? "",
-        title: img.Title ?? "",
-        keywords: (img.Keywords ?? "")
-          .split(/[,;]/)
-          .map((k) => k.trim())
-          .filter(Boolean),
-        sha256,
-        byteSize: buffer.length,
-        localFile,
-      };
-      images.push(exported);
-      progress.downloadedImageKeys[img.ImageKey] = exported;
-      console.log(`[export] downloaded ${album.Name}/${img.FileName} (${(buffer.length / 1e6).toFixed(1)}MB)`);
     }
 
     if (start + pageSize > page.Response.Pages.Total) break;
@@ -204,19 +213,29 @@ async function main() {
         continue;
       }
       console.log(`[export] album: ${album.UrlPath}`);
-      const exported = await exportAlbum(album, filesDir, creds, progress);
-      albums.push(exported);
-      // Persist progress after every album, not just at the very end -- a crash
-      // mid-run should lose at most one album's partial progress, not everything.
+      // One album failing outright (e.g. its image-list request exhausts retries)
+      // must not take down a run meant to process hundreds of albums unattended --
+      // log it and move to the next; a re-run picks it back up from scratch since it
+      // never got recorded in manifest.json below.
+      try {
+        const exported = await exportAlbum(album, filesDir, creds, progress);
+        albums.push(exported);
+      } catch (err) {
+        console.error(`[export] FAILED album ${album.UrlPath}, skipping: ${err}`);
+        continue;
+      }
+      // Persist progress AND the manifest after every album, not just at the very
+      // end -- a crash mid-run should leave a valid, importable manifest.json for
+      // everything completed so far, not lose it because the process never reached
+      // the final write.
       await writeFile(progressFile, JSON.stringify(progress, null, 2));
+      const manifest: Manifest = { exportedAt: new Date().toISOString(), nickname, albums };
+      await writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
     }
 
     if (start + pageSize > page.Response.Pages.Total) break;
     start += pageSize;
   }
-
-  const manifest: Manifest = { exportedAt: new Date().toISOString(), nickname, albums };
-  await writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
   const totalImages = albums.reduce((n, a) => n + a.images.length, 0);
   const declaredTotal = albums.reduce((n, a) => n + a.declaredImageCount, 0);

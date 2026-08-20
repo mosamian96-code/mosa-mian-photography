@@ -11,47 +11,62 @@ async function throttle() {
   lastRequestAt = Date.now();
 }
 
-/** GET one SmugMug API v2 URL, signed, rate-limited, retried on 429/5xx with backoff. */
-export async function smugmugGet<T = unknown>(url: string, creds: OAuthCredentials): Promise<T> {
+class PermanentError extends Error {}
+
+/**
+ * Retries both HTTP-level failures (429/5xx) and network-level ones (ECONNRESET,
+ * DNS blips, TLS resets) -- a multi-day unattended run WILL hit transient network
+ * errors eventually (confirmed live: an ECONNRESET killed the whole process on the
+ * first real multi-hour run since only HTTP status was being retried, not fetch()
+ * itself throwing). A PermanentError (e.g. a genuine 404) skips retries entirely
+ * instead of burning through backoff delays on something that will never succeed.
+ */
+async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     await throttle();
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof PermanentError) throw err;
+      if (attempt === MAX_RETRIES) throw err;
+      const delay = Math.min(30_000, 1000 * 2 ** attempt);
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[smugmug] ${label} failed (${message}), retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("unreachable");
+}
+
+/** GET one SmugMug API v2 URL, signed, rate-limited, retried on both HTTP and network errors. */
+export async function smugmugGet<T = unknown>(url: string, creds: OAuthCredentials): Promise<T> {
+  return withRetry(`GET ${url}`, async () => {
     const res = await fetch(url, {
       headers: {
         Authorization: signRequest("GET", url, creds),
         Accept: "application/json",
       },
     });
-
     if (res.status === 429 || res.status >= 500) {
-      const delay = Math.min(30_000, 1000 * 2 ** attempt);
-      console.warn(`[smugmug] ${res.status} on ${url}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
-      await new Promise((r) => setTimeout(r, delay));
-      continue;
+      throw new Error(`HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(`SmugMug API error ${res.status} on ${url}: ${await res.text()}`);
+      throw new PermanentError(`SmugMug API error ${res.status} on ${url}: ${await res.text()}`);
     }
     return (await res.json()) as T;
-  }
-  throw new Error(`SmugMug API: exhausted retries on ${url}`);
+  });
 }
 
 /** Downloads a binary URL (image original) to a Buffer, same throttle/retry policy. */
 export async function smugmugDownload(url: string, creds: OAuthCredentials): Promise<Buffer> {
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    await throttle();
+  return withRetry(`download ${url}`, async () => {
     const res = await fetch(url, { headers: { Authorization: signRequest("GET", url, creds) } });
-
     if (res.status === 429 || res.status >= 500) {
-      const delay = Math.min(30_000, 1000 * 2 ** attempt);
-      console.warn(`[smugmug] ${res.status} downloading ${url}, retrying in ${delay}ms`);
-      await new Promise((r) => setTimeout(r, delay));
-      continue;
+      throw new Error(`HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(`SmugMug download error ${res.status} on ${url}`);
+      throw new PermanentError(`SmugMug download error ${res.status} on ${url}`);
     }
     return Buffer.from(await res.arrayBuffer());
-  }
-  throw new Error(`SmugMug download: exhausted retries on ${url}`);
+  });
 }
