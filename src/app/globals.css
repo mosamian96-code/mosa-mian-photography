@@ -41,6 +41,15 @@
   --text-3xl--line-height: 68px;
 }
 
+html {
+  /* Reserves the scrollbar's width permanently rather than letting page height
+     changes toggle it in and out. Without this, JustifiedGrid's two render modes
+     (see that component) can trigger a scrollbar-appears/disappears loop that feeds
+     back into its own ResizeObserver -- traced a 4.6s main-thread task on the live
+     gallery page to exactly this. */
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--surface);
   color: var(--ink);

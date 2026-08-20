@@ -20,7 +20,17 @@ export function JustifiedGrid<T extends JustifyInput>({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const observer = new ResizeObserver((entries) => setWidth(entries[0].contentRect.width));
+    const observer = new ResizeObserver((entries) => {
+      const next = Math.round(entries[0].contentRect.width);
+      // Switching between the two render modes below changes this element's own
+      // height, which can make the browser re-fire the observer even though width
+      // didn't meaningfully change -- without this guard that becomes a feedback
+      // loop (observe -> setState -> re-render -> height changes -> observe again)
+      // that can burn seconds of main-thread time before settling. Bailing out when
+      // width is unchanged (React's own Object.is check isn't enough since this
+      // rounds first) breaks the cycle at the source.
+      setWidth((prev) => (prev === next ? prev : next));
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
