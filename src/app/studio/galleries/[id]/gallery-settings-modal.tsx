@@ -27,6 +27,7 @@ type GalleryItem = {
   assetId: string;
   filename: string;
   lqip: string | null;
+  thumbUrl: string | null;
 };
 
 type Watermark = { id: string; name: string };
@@ -126,7 +127,9 @@ export function GallerySettingsModal({
     if (galleryItems.length > 0 || loadingItems) return;
     setLoadingItems(true);
     try {
-      const res = await fetch(`/api/galleries/${gallery.id}/items`);
+      // /api/galleries/[id]/items only implements POST/PATCH/DELETE (add/reorder/remove);
+      // the gallery's own GET already returns items with thumbnails, so reuse that.
+      const res = await fetch(`/api/galleries/${gallery.id}`);
       const data = await res.json();
       setGalleryItems(data.items || []);
     } catch (err) {
@@ -278,7 +281,11 @@ export function GallerySettingsModal({
                         title={item.filename}
                       >
                         <img
-                          src={item.lqip || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect fill='%23e5e7eb'/%3E%3C/svg%3E"}
+                          src={
+                            item.thumbUrl ||
+                            item.lqip ||
+                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Crect fill='%23e5e7eb'/%3E%3C/svg%3E"
+                          }
                           alt={item.filename}
                           className="h-full w-full object-cover"
                         />
