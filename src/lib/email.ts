@@ -1,8 +1,12 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function sendPasswordResetEmail(email: string, resetUrl: string) {
+  // Constructed lazily, not at module scope: this module is imported by the
+  // route handler that Next.js's build-time page-data collection loads, and the
+  // Resend constructor throws synchronously when the key is missing/empty --
+  // which it always is during the Docker build stage (no secrets at build time,
+  // see Dockerfile).
+  const resend = new Resend(process.env.RESEND_API_KEY);
   const result = await resend.emails.send({
     from: "noreply@mosamianphotography.com",
     to: email,
