@@ -33,6 +33,13 @@ export const users = pgTable("user", {
   passwordHash: text("passwordHash"),
 });
 
+export const passwordResetTokens = pgTable("password_reset_token", {
+  token: text("token").primaryKey(),
+  email: text("email").notNull(),
+  expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+});
+
 export const accounts = pgTable(
   "account",
   {
