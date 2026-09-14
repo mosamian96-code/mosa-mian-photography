@@ -4,8 +4,9 @@ const RAW_EXTENSIONS = new Set(["dng", "cr3", "cr2", "arw", "nef", "raf", "orf",
 const HEIC_EXTENSIONS = new Set(["heic", "heif"]);
 const JPEG_EXTENSIONS = new Set(["jpg", "jpeg"]);
 const SIDECAR_EXTENSIONS = new Set(["xmp"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "m4v", "avi", "mkv", "flv", "wmv", "m2ts", "mts"]);
 
-export type AssetKind = "raw" | "jpeg" | "heic" | "sidecar";
+export type AssetKind = "raw" | "jpeg" | "heic" | "sidecar" | "video";
 
 export function extOf(filename: string) {
   const dot = filename.lastIndexOf(".");
@@ -18,6 +19,7 @@ export function classifyKind(filename: string): AssetKind | null {
   if (JPEG_EXTENSIONS.has(ext)) return "jpeg";
   if (HEIC_EXTENSIONS.has(ext)) return "heic";
   if (SIDECAR_EXTENSIONS.has(ext)) return "sidecar";
+  if (VIDEO_EXTENSIONS.has(ext)) return "video";
   return null;
 }
 

@@ -114,8 +114,9 @@ export async function processIngestJob(job: Job<IngestJobData>) {
         : null;
     const keywordList = normalizeKeywords(tags.Keywords ?? tags.Subject);
 
-    // 3/4. Base raster + derivatives (section 7 steps 3-4). Sidecars carry no image.
-    const rasterBuffer = await extractRasterBuffer(current.kind, tempPath, buffer, tags.Orientation);
+    // 3/4. Base raster + derivatives (section 7 steps 3-4). Sidecars and videos carry no image derivatives.
+    const rasterBuffer =
+      current.kind === "video" ? null : await extractRasterBuffer(current.kind, tempPath, buffer, tags.Orientation);
 
     let width: number | null = null;
     let height: number | null = null;

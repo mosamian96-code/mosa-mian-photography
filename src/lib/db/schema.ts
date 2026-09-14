@@ -26,10 +26,11 @@ export const users = pgTable("user", {
   email: text("email").unique(),
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
-  // TOTP second factor. Base32 secret lives directly on the user row rather than a
-  // separate table: there is exactly one admin account, so the extra join buys nothing.
-  mfaSecret: text("mfaSecret"),
-  mfaEnabledAt: timestamp("mfaEnabledAt", { mode: "date" }),
+  // scrypt hash ("salt:hash", both hex) -- see src/lib/password.ts. Replaced the
+  // email-magic-link + TOTP flow with plain email/password (decided 2026-08-22: the
+  // authenticator step became a real lockout risk with no recovery path for a
+  // single-admin site with no one else to grant access back).
+  passwordHash: text("passwordHash"),
 });
 
 export const accounts = pgTable(
@@ -114,7 +115,7 @@ export const assets = pgTable(
     batchId: text("batch_id").references(() => importBatches.id, { onDelete: "set null" }),
     byteSize: bigint("byte_size", { mode: "number" }).notNull(),
     mime: text("mime").notNull(),
-    kind: text("kind", { enum: ["raw", "jpeg", "heic", "sidecar"] }).notNull(),
+    kind: text("kind", { enum: ["raw", "jpeg", "heic", "sidecar", "video"] }).notNull(),
     width: integer("width"),
     height: integer("height"),
     capturedAt: timestamp("captured_at", { mode: "date" }),
@@ -266,13 +267,40 @@ export const galleries = pgTable(
     sortMode: text("sort_mode", { enum: ["capture_date", "upload_date", "filename", "manual"] })
       .notNull()
       .default("capture_date"),
+    // Null means "use sortMode's own default direction" (newest-first for the two
+    // date modes, A-Z for filename/manual) -- an explicit value overrides that. Kept
+    // nullable rather than defaulted so this migration doesn't silently reorder any
+    // existing gallery's photos.
+    sortDirection: text("sort_direction", { enum: ["asc", "desc"] }),
     downloadsPolicy: text("downloads_policy", { enum: ["off", "web", "original"] })
       .notNull()
       .default("off"),
+    // Separate from downloadsPolicy above, which is scoped to client-proofing links
+    // only (see /api/public/download's own comment) -- this one governs whether an
+    // ordinary site visitor who can already view the gallery (public/unlisted/entered
+    // the password) can also download from it. Off by default on every gallery.
+    publicDownloadsPolicy: text("public_downloads_policy", { enum: ["off", "web", "original"] })
+      .notNull()
+      .default("off"),
+    metaKeywords: text("meta_keywords"),
+    // These three default true because the behavior they gate (EXIF line under the
+    // photo, the slideshow button, the GPS map) was already unconditional before this
+    // column existed -- true preserves every existing gallery's current appearance;
+    // showFilenames defaults false because that display didn't exist before at all.
+    showCameraInfo: boolean("show_camera_info").notNull().default(true),
+    showFilenames: boolean("show_filenames").notNull().default(false),
+    slideshowEnabled: boolean("slideshow_enabled").notNull().default(true),
+    mapEnabled: boolean("map_enabled").notNull().default(true),
+    rightClickMessage: text("right_click_message"),
+    // Combined with visibility (see generateMetadata) -- true is a no-op there since a
+    // non-public gallery is already noindex regardless; this only matters as an
+    // explicit opt-out for an otherwise-public gallery.
+    searchable: boolean("searchable").notNull().default(true),
     // References `watermarks`, defined further down this file — forward reference,
     // same AnyPgColumn callback pattern as folders' self-reference above.
     watermarkId: text("watermark_id").references((): AnyPgColumn => watermarks.id, { onDelete: "set null" }),
     publishedAt: timestamp("published_at", { mode: "date" }),
+    position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (t) => [unique("gallery_folder_slug_unique").on(t.folderId, t.slug)],
@@ -411,6 +439,7 @@ export const siteSettings = pgTable("site_settings", {
   aboutBio: text("about_bio"),
   socialInstagram: text("social_instagram"),
   socialFacebook: text("social_facebook"),
+  socialLinkedin: text("social_linkedin"),
   socialEmail: text("social_email"),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });

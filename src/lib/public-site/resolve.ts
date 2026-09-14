@@ -6,12 +6,17 @@ import { publicDerivativeUrl } from "@/lib/storage";
 type Folder = typeof folders.$inferSelect;
 type Gallery = typeof galleries.$inferSelect;
 
+export type FolderSection = {
+  folder: Folder;
+  galleries: (Gallery & { coverUrl: string | null; coverLqip: string | null; hoverUrl: string | null })[];
+  subsections: FolderSection[];
+};
+
 export type ResolvedFolder = {
   type: "folder";
   folder: Folder;
   breadcrumb: Folder[];
-  subfolders: Folder[];
-  galleries: (Gallery & { coverUrl: string | null; photoCount: number })[];
+  section: FolderSection;
 };
 
 export type ResolvedGallery = {
@@ -70,61 +75,82 @@ export async function resolvePath(segments: string[]): Promise<ResolvedFolder | 
   }
 
   if (!current) return null;
-  const subfolders = await db.query.folders.findMany({
-    where: and(eq(folders.parentId, current.id), eq(folders.visibility, "public")),
-    orderBy: [asc(folders.position), asc(folders.title)],
-  });
-  const childGalleries = await db.query.galleries.findMany({
-    where: eq(galleries.folderId, current.id),
-  });
+  const section = await loadFolderSection(current);
+  return { type: "folder", folder: current, breadcrumb, section };
+}
+
+/** Builds a folder's full display tree: its own direct galleries plus one
+ * FolderSection per direct subfolder, recursively -- SmugMug's actual folder-page
+ * behavior (requested directly against the user's SmugMug site), which flattens
+ * subfolders into titled sections on the same page rather than making visitors click
+ * through an empty-looking tile per subfolder. Public/published filtering happens at
+ * every level, same as the old flat version. */
+async function loadFolderSection(folder: Folder): Promise<FolderSection> {
+  const [subfolders, childGalleries] = await Promise.all([
+    db.query.folders.findMany({
+      where: and(eq(folders.parentId, folder.id), eq(folders.visibility, "public")),
+      orderBy: [asc(folders.position), asc(folders.title)],
+    }),
+    db.query.galleries.findMany({ where: eq(galleries.folderId, folder.id) }),
+  ]);
   const visibleGalleries = childGalleries.filter((g) => g.publishedAt && g.visibility === "public");
 
-  const galleriesWithCovers = await Promise.all(
-    visibleGalleries.map(async (gallery) => {
-      const [{ n: photoCount }] = await db
-        .select({ n: count() })
-        .from(galleryItems)
-        .where(eq(galleryItems.galleryId, gallery.id));
+  const [galleriesWithCovers, subsections] = await Promise.all([
+    Promise.all(
+      visibleGalleries.map(async (gallery) => {
+        const coverAssetId =
+          (gallery.coverAssetId &&
+            (await db.query.assets.findFirst({ where: and(eq(assets.id, gallery.coverAssetId), isNull(assets.deletedAt)) }))
+              ?.id) ??
+          (
+            await db.query.galleryItems.findFirst({
+              where: eq(galleryItems.galleryId, gallery.id),
+              orderBy: (gi, { asc: ascOrder }) => [ascOrder(gi.position)],
+            })
+          )?.assetId;
 
-      const coverAssetId =
-        gallery.coverAssetId ??
-        (
-          await db.query.galleryItems.findFirst({
-            where: eq(galleryItems.galleryId, gallery.id),
-            orderBy: (gi, { asc: ascOrder }) => [ascOrder(gi.position)],
-          })
-        )?.assetId;
+        // First couple of items in display order, so the hover-swap photo can be
+        // "whichever of these isn't already the cover" -- no separate admin-curated
+        // field, just the gallery's own next photo.
+        const leadItems = await db.query.galleryItems.findMany({
+          where: eq(galleryItems.galleryId, gallery.id),
+          orderBy: (gi, { asc: ascOrder }) => [ascOrder(gi.position)],
+          limit: 3,
+        });
+        const hoverAssetId = leadItems.find((it) => it.assetId !== coverAssetId)?.assetId;
 
-      const coverDerivative = coverAssetId
-        ? await db.query.derivatives.findFirst({
-            where: and(
-              eq(derivatives.assetId, coverAssetId),
-              eq(derivatives.variant, "400"),
-              eq(derivatives.format, "webp"),
-            ),
-          })
-        : null;
+        const [coverAsset, coverDerivative, hoverDerivative] = await Promise.all([
+          coverAssetId ? db.query.assets.findFirst({ where: eq(assets.id, coverAssetId), columns: { lqip: true } }) : null,
+          coverAssetId
+            ? db.query.derivatives.findFirst({
+                where: and(eq(derivatives.assetId, coverAssetId), eq(derivatives.variant, "400"), eq(derivatives.format, "webp")),
+              })
+            : null,
+          hoverAssetId
+            ? db.query.derivatives.findFirst({
+                where: and(eq(derivatives.assetId, hoverAssetId), eq(derivatives.variant, "400"), eq(derivatives.format, "webp")),
+              })
+            : null,
+        ]);
 
-      return {
-        ...gallery,
-        coverUrl: coverDerivative ? publicDerivativeUrl(coverDerivative.storageKey) : null,
-        photoCount,
-      };
-    }),
-  );
+        return {
+          ...gallery,
+          coverUrl: coverDerivative ? publicDerivativeUrl(coverDerivative.storageKey) : null,
+          coverLqip: coverAsset?.lqip ?? null,
+          hoverUrl: hoverDerivative ? publicDerivativeUrl(hoverDerivative.storageKey) : null,
+        };
+      }),
+    ),
+    Promise.all(subfolders.map((sf) => loadFolderSection(sf))),
+  ]);
 
-  return {
-    type: "folder",
-    folder: current,
-    breadcrumb,
-    subfolders,
-    galleries: galleriesWithCovers,
-  };
+  return { folder, galleries: galleriesWithCovers, subsections };
 }
 
 export type GalleryImage = {
   assetId: string;
   filename: string;
+  kind: "raw" | "jpeg" | "heic" | "sidecar" | "video";
   width: number | null;
   height: number | null;
   lqip: string | null;
@@ -137,6 +163,7 @@ export type GalleryImage = {
   aperture: string | null;
   gpsLat: number | null;
   gpsLon: number | null;
+  storageKey: string; // Used for video playback; image urls come from derivatives
   /** Keyed as `${format}${variant}`, e.g. "avif400", "webp2560". */
   urls: Record<string, string>;
 };
@@ -148,22 +175,34 @@ const SORT_COLUMN = {
   manual: galleryItems.position,
 } as const;
 
+// filename/manual read naturally A-Z; the two date modes read naturally newest-first.
+// gallery.sortDirection overrides this when set explicitly.
+const DEFAULT_DIRECTION: Record<Gallery["sortMode"], "asc" | "desc"> = {
+  capture_date: "desc",
+  upload_date: "desc",
+  filename: "asc",
+  manual: "asc",
+};
+
 export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[]> {
   const sortColumn = SORT_COLUMN[gallery.sortMode];
+  const direction = gallery.sortDirection ?? DEFAULT_DIRECTION[gallery.sortMode];
   const rows = await db
     .select({
       assetId: assets.id,
       filename: assets.originalFilename,
+      kind: assets.kind,
       width: assets.width,
       height: assets.height,
       lqip: assets.lqip,
       caption: galleryItems.caption,
       capturedAt: assets.capturedAt,
+      storageKey: assets.storageKey,
     })
     .from(galleryItems)
     .innerJoin(assets, eq(assets.id, galleryItems.assetId))
-    .where(eq(galleryItems.galleryId, gallery.id))
-    .orderBy(gallery.sortMode === "filename" ? asc(sortColumn) : desc(sortColumn));
+    .where(and(eq(galleryItems.galleryId, gallery.id), isNull(assets.deletedAt)))
+    .orderBy(direction === "asc" ? asc(sortColumn) : desc(sortColumn));
 
   const allDerivatives = await db.query.derivatives.findMany({
     where: (d, { inArray }) => inArray(d.assetId, rows.map((r) => r.assetId)),
@@ -195,6 +234,7 @@ export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[
     return {
       assetId: row.assetId,
       filename: row.filename,
+      kind: row.kind,
       width: row.width,
       height: row.height,
       lqip: row.lqip,
@@ -207,21 +247,50 @@ export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[
       aperture: meta?.aperture ?? null,
       gpsLat: meta?.gpsLat ?? null,
       gpsLon: meta?.gpsLon ?? null,
+      storageKey: row.storageKey,
       urls,
     };
   });
 }
 
-/** Asset ids that appear in at least one public, published gallery -- the visibility
- * boundary for cross-gallery browsing (keyword cloud, search). Unlisted/password/
- * private galleries never surface here; that's the whole point of "unlisted". */
+/** Folder ids that are actually reachable by browsing from the root -- a folder whose
+ * own visibility is "public" but sits inside a non-public ancestor (e.g. any of the
+ * personal subfolders under the "Unlisted" root, which individually default to
+ * "public" and only the root itself was deliberately hidden) is NOT publicly
+ * reachable. Flat, cross-folder features (search, keyword browsing) query every
+ * folder/gallery in the database directly rather than walking down from a public
+ * root the way normal page navigation does, so checking a node's own visibility flag
+ * alone silently leaked personal folder/gallery names through those features even
+ * though browsing/homepage listings were correctly gated -- found via manual testing
+ * of the search page, confirmed real (client wedding folder names appeared in
+ * /search results despite the "Unlisted" root being hidden from the homepage). */
+export async function publiclyReachableFolderIds(): Promise<Set<string>> {
+  const rows = await db.execute<{ id: string }>(sql`
+    with recursive reachable as (
+      select id from ${folders} where parent_id is null and visibility = 'public'
+      union all
+      select f.id from ${folders} f
+      join reachable r on f.parent_id = r.id
+      where f.visibility = 'public'
+    )
+    select id from reachable
+  `);
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Asset ids that appear in at least one public, published gallery whose folder is
+ * also publicly reachable (see publiclyReachableFolderIds) -- the visibility boundary
+ * for cross-gallery browsing (keyword cloud, search). Unlisted/password/private
+ * galleries never surface here; that's the whole point of "unlisted". */
 async function publiclyVisibleAssetIds(): Promise<string[]> {
+  const reachable = await publiclyReachableFolderIds();
   const rows = await db
-    .selectDistinct({ assetId: galleryItems.assetId })
+    .selectDistinct({ assetId: galleryItems.assetId, folderId: galleries.folderId })
     .from(galleryItems)
     .innerJoin(galleries, eq(galleries.id, galleryItems.galleryId))
-    .where(and(eq(galleries.visibility, "public"), sql`${galleries.publishedAt} is not null`));
-  return rows.map((r) => r.assetId);
+    .innerJoin(assets, eq(assets.id, galleryItems.assetId))
+    .where(and(eq(galleries.visibility, "public"), sql`${galleries.publishedAt} is not null`, isNull(assets.deletedAt)));
+  return rows.filter((r) => reachable.has(r.folderId)).map((r) => r.assetId);
 }
 
 export type KeywordCount = { value: string; count: number };
@@ -273,13 +342,15 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
     .select({
       assetId: assets.id,
       filename: assets.originalFilename,
+      kind: assets.kind,
       width: assets.width,
       height: assets.height,
       lqip: assets.lqip,
       capturedAt: assets.capturedAt,
+      storageKey: assets.storageKey,
     })
     .from(assets)
-    .where(inArray(assets.id, assetIds))
+    .where(and(inArray(assets.id, assetIds), isNull(assets.deletedAt)))
     .orderBy(desc(assets.capturedAt));
 
   const [allDerivatives, metaRows] = await Promise.all([
@@ -299,6 +370,7 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
     return {
       assetId: row.assetId,
       filename: row.filename,
+      kind: row.kind,
       width: row.width,
       height: row.height,
       lqip: row.lqip,
@@ -311,6 +383,7 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
       aperture: meta?.aperture ?? null,
       gpsLat: meta?.gpsLat ?? null,
       gpsLon: meta?.gpsLon ?? null,
+      storageKey: row.storageKey,
       urls,
     };
   });
@@ -330,10 +403,12 @@ export async function searchPublicContent(query: string): Promise<SearchResults>
   if (!q) return { folders: [], galleries: [], keywords: [] };
   const pattern = `%${q.toLowerCase()}%`;
 
-  const [matchedFolders, matchedGalleries, matchedKeywords] = await Promise.all([
+  const reachable = await publiclyReachableFolderIds();
+
+  const [candidateFolders, candidateGalleries, matchedKeywords] = await Promise.all([
     db.query.folders.findMany({
       where: and(eq(folders.visibility, "public"), sql`(lower(${folders.title}) like ${pattern} or lower(coalesce(${folders.description}, '')) like ${pattern})`),
-      limit: 25,
+      limit: 50,
     }),
     db.query.galleries.findMany({
       where: and(
@@ -341,7 +416,7 @@ export async function searchPublicContent(query: string): Promise<SearchResults>
         sql`${galleries.publishedAt} is not null`,
         sql`(lower(${galleries.title}) like ${pattern} or lower(coalesce(${galleries.description}, '')) like ${pattern})`,
       ),
-      limit: 25,
+      limit: 50,
     }),
     db
       .select({ value: keywords.value })
@@ -349,6 +424,12 @@ export async function searchPublicContent(query: string): Promise<SearchResults>
       .where(sql`lower(${keywords.value}) like ${pattern}`)
       .limit(10),
   ]);
+
+  // Own visibility is "public" on both, but that alone doesn't mean reachable -- see
+  // publiclyReachableFolderIds for why a flat query like this needs the extra check
+  // that normal folder-to-folder browsing gets for free.
+  const matchedFolders = candidateFolders.filter((f) => reachable.has(f.id)).slice(0, 25);
+  const matchedGalleries = candidateGalleries.filter((g) => reachable.has(g.folderId)).slice(0, 25);
 
   const galleriesWithPath = await Promise.all(
     matchedGalleries.map(async (gallery) => {
