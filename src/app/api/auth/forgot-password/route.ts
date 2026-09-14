@@ -4,6 +4,8 @@ import { users, passwordResetTokens } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendPasswordResetEmail } from "@/lib/email";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const { email } = await request.json();

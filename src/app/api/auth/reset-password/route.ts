@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { users, passwordResetTokens } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const { token, email, newPassword } = await request.json();
