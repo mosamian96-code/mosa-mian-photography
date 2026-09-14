@@ -40,6 +40,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ ok: true, added: assetIds.length });
 }
 
+/** Persists a manual drag-to-reorder from the gallery editor. Also switches the
+ * gallery to sortMode "manual" -- reordering only has a visible effect on the public
+ * site once that's set, and doing it here means the admin doesn't need a separate
+ * step to make their drag actually take effect. */
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { response } = await requireAdminSession();
+  if (response) return response;
+
+  const { id: galleryId } = await params;
+  const { assetIds } = (await req.json()) as { assetIds?: string[] };
+  if (!assetIds?.length) return NextResponse.json({ error: "assetIds required" }, { status: 400 });
+
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < assetIds.length; i++) {
+      await tx
+        .update(galleryItems)
+        .set({ position: i })
+        .where(and(eq(galleryItems.galleryId, galleryId), eq(galleryItems.assetId, assetIds[i])));
+    }
+    await tx.update(galleries).set({ sortMode: "manual" }).where(eq(galleries.id, galleryId));
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { response } = await requireAdminSession();
   if (response) return response;

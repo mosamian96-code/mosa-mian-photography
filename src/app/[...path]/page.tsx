@@ -3,10 +3,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { notFound, permanentRedirect } from "next/navigation";
+import { FolderSectionGrid } from "@/components/folder-section-grid";
 import { GalleryPasswordForm } from "@/components/gallery-password-form";
 import GalleryMap from "@/components/gallery-map-loader";
 import { GalleryView } from "@/components/gallery-view";
-import { PublicHeader } from "@/components/public-header";
+import { PublicShell } from "@/components/public-shell";
+import { RightClickGuard } from "@/components/right-click-guard";
 import { db } from "@/lib/db";
 import { redirects } from "@/lib/db/schema";
 import { gallerySessionCookieName, verifyGalleryToken } from "@/lib/public-site/gallery-auth";
@@ -23,7 +25,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return {
       title: `${resolved.gallery.title} — Mosa Mian Photography`,
       description: resolved.gallery.description ?? `Photos from ${resolved.gallery.title} — Mosa Mian Photography.`,
-      robots: resolved.gallery.visibility === "public" ? undefined : { index: false },
+      keywords: resolved.gallery.metaKeywords || undefined,
+      robots: resolved.gallery.visibility === "public" && resolved.gallery.searchable ? undefined : { index: false },
     };
   }
   return {
@@ -82,68 +85,68 @@ export default async function PublicPathPage({ params }: Props) {
     const images = await loadGalleryImages(gallery);
     const hasGeotagged = images.some((img) => img.gpsLat != null && img.gpsLon != null);
 
-    return (
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <PublicHeader />
-        <Breadcrumb trail={trail} />
-        <h1
-          className="mt-4 text-2xl text-neutral-900"
-          style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}
-        >
-          {gallery.title}
-        </h1>
-        {gallery.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{gallery.description}</p> : null}
-        {hasGeotagged ? <GalleryMap images={images} /> : null}
-        <div className="mt-6">
-          {images.length > 0 ? (
-            <GalleryView images={images} />
-          ) : (
-            <p className="text-sm text-neutral-400">This gallery is empty.</p>
-          )}
+    const content = (
+      <PublicShell>
+        <div className="mx-auto max-w-6xl px-4 py-8">
+          <Breadcrumb trail={trail} />
+          <div style={{ animation: "reveal-up var(--dur-slow) var(--ease-settle) both" }}>
+            <h1
+              className="mt-4 text-2xl text-neutral-900"
+              style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}
+            >
+              {gallery.title}
+            </h1>
+            {gallery.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{gallery.description}</p> : null}
+          </div>
+          {hasGeotagged && gallery.mapEnabled ? <GalleryMap images={images} /> : null}
+          <div className="mt-6">
+            {images.length > 0 ? (
+              <GalleryView
+                images={images}
+                showCameraInfo={gallery.showCameraInfo}
+                showFilenames={gallery.showFilenames}
+                slideshowEnabled={gallery.slideshowEnabled}
+                publicDownload={
+                  gallery.publicDownloadsPolicy !== "off"
+                    ? { galleryId: gallery.id, gallerySlug: gallery.slug }
+                    : undefined
+                }
+              />
+            ) : (
+              <p className="text-sm text-neutral-400">This gallery is empty.</p>
+            )}
+          </div>
         </div>
-      </main>
+      </PublicShell>
+    );
+
+    return gallery.rightClickMessage ? (
+      <RightClickGuard message={gallery.rightClickMessage}>{content}</RightClickGuard>
+    ) : (
+      content
     );
   }
 
-  const { folder, subfolders, galleries } = resolved;
+  const { folder, section } = resolved;
+  const isEmpty = section.galleries.length === 0 && section.subsections.length === 0;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PublicHeader />
-      <Breadcrumb trail={trail} />
-      <h1 className="mt-4 text-2xl text-neutral-900" style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}>
-        {folder.title}
-      </h1>
-      {folder.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{folder.description}</p> : null}
+    <PublicShell>
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        <Breadcrumb trail={trail} />
+        <div style={{ animation: "reveal-up var(--dur-slow) var(--ease-settle) both" }}>
+          <h1 className="mt-4 text-2xl text-neutral-900" style={{ fontFamily: "var(--font-display)", fontStyle: "italic", fontWeight: 400 }}>
+            {folder.title}
+          </h1>
+          {folder.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{folder.description}</p> : null}
+        </div>
 
-      <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-        {subfolders.map((f) => (
-          <Link key={f.id} href={`/${[...path, f.slug].join("/")}`} className="group">
-            <div className="flex aspect-square items-center justify-center rounded bg-neutral-100 text-sm text-neutral-400 transition-colors group-hover:bg-neutral-200">
-              {f.title}
-            </div>
-          </Link>
-        ))}
-        {galleries.map((g) => (
-          <Link key={g.id} href={`/${[...path, g.slug].join("/")}`} className="group">
-            <div className="aspect-square overflow-hidden rounded bg-neutral-100">
-              {g.coverUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={g.coverUrl}
-                  alt={g.title}
-                  className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
-                />
-              ) : null}
-            </div>
-            <p className="mt-2 truncate text-sm text-neutral-800">{g.title}</p>
-            <p className="text-xs text-neutral-400">{g.photoCount} photos</p>
-          </Link>
-        ))}
-        {subfolders.length === 0 && galleries.length === 0 ? (
-          <p className="col-span-full text-sm text-neutral-400">Nothing published here yet.</p>
-        ) : null}
+        {isEmpty ? (
+          <p className="mt-8 text-sm text-neutral-400">Nothing published here yet.</p>
+        ) : (
+          <FolderSectionGrid section={section} pathSegments={path} depth={0} />
+        )}
       </div>
-    </main>
+    </PublicShell>
   );
 }

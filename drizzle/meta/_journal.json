@@ -43,6 +43,34 @@
       "when": 1787250807988,
       "tag": "0005_same_medusa",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787316446748,
+      "tag": "0006_low_gideon",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787406267913,
+      "tag": "0007_replace_mfa_with_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787442548551,
+      "tag": "0008_marvelous_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788041481239,
+      "tag": "0009_mighty_molecule_man",
+      "breakpoints": true
     }
   ]
 }

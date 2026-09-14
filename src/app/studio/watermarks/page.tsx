@@ -72,29 +72,29 @@ export default function WatermarksPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-medium text-neutral-900">Watermarks</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">Watermarks</h1>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
         Upload a transparent PNG mark, then assign it to a gallery from that gallery&apos;s editor.
       </p>
 
-      <form onSubmit={upload} className="mt-6 flex flex-wrap items-end gap-3 rounded border border-neutral-200 p-4">
+      <form onSubmit={upload} className="mt-6 flex flex-wrap items-end gap-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
         <label className="block text-sm">
-          <span className="text-neutral-500">Name</span>
+          <span className="text-neutral-500 dark:text-neutral-400">Name</span>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 block w-48 rounded border border-neutral-300 px-3 py-1.5 outline-none focus:border-neutral-900"
+            className="mt-1 block w-48 rounded border border-neutral-300 px-3 py-1.5 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:border-neutral-400"
           />
         </label>
         <label className="block text-sm">
-          <span className="text-neutral-500">PNG file</span>
-          <input ref={fileRef} type="file" accept="image/png" className="mt-1 block text-sm" />
+          <span className="text-neutral-500 dark:text-neutral-400">PNG file</span>
+          <input ref={fileRef} type="file" accept="image/png" className="mt-1 block text-sm dark:text-neutral-300" />
         </label>
         <button
           type="submit"
           disabled={uploading}
-          className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
         >
           {uploading ? "Uploading…" : "Upload"}
         </button>
@@ -102,19 +102,19 @@ export default function WatermarksPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((w) => (
-          <div key={w.id} className="rounded border border-neutral-200 p-4">
+          <div key={w.id} className="rounded border border-neutral-200 p-4 dark:border-neutral-800">
             <div className="flex items-center justify-center rounded bg-[repeating-conic-gradient(#e5e5e5_0_25%,#fff_0_50%)] bg-[length:16px_16px] p-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={w.previewUrl} alt={w.name} className="max-h-24 max-w-full" />
             </div>
-            <div className="mt-3 text-sm font-medium text-neutral-900">{w.name}</div>
+            <div className="mt-3 text-sm font-medium text-neutral-900 dark:text-neutral-100">{w.name}</div>
 
             <label className="mt-3 block text-sm">
-              <span className="text-neutral-500">Position</span>
+              <span className="text-neutral-500 dark:text-neutral-400">Position</span>
               <select
                 value={w.position}
                 onChange={(e) => patch(w.id, { position: e.target.value as Position })}
-                className="mt-1 w-full rounded border border-neutral-300 px-3 py-1.5 outline-none focus:border-neutral-900"
+                className="mt-1 w-full rounded border border-neutral-300 px-3 py-1.5 outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:border-neutral-400"
               >
                 {POSITIONS.map((p) => (
                   <option key={p.value} value={p.value}>
@@ -125,7 +125,7 @@ export default function WatermarksPage() {
             </label>
 
             <label className="mt-3 block text-sm">
-              <span className="text-neutral-500">Opacity ({Math.round(w.opacity * 100)}%)</span>
+              <span className="text-neutral-500 dark:text-neutral-400">Opacity ({Math.round(w.opacity * 100)}%)</span>
               <input
                 type="range"
                 min={0}
@@ -142,13 +142,13 @@ export default function WatermarksPage() {
             <button
               type="button"
               onClick={() => remove(w.id)}
-              className="mt-3 text-sm text-neutral-400 hover:text-red-600"
+              className="mt-3 text-sm text-neutral-400 hover:text-red-600 dark:text-neutral-500 dark:hover:text-red-400"
             >
               Delete
             </button>
           </div>
         ))}
-        {items.length === 0 ? <p className="text-sm text-neutral-400">No watermarks uploaded yet.</p> : null}
+        {items.length === 0 ? <p className="text-sm text-neutral-400 dark:text-neutral-500">No watermarks uploaded yet.</p> : null}
       </div>
     </div>
   );

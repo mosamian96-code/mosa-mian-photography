@@ -17,7 +17,13 @@ export async function GET(req: NextRequest) {
   if (ids.length === 0) return NextResponse.json({ items: [] });
 
   const rows = await db
-    .select({ id: assets.id, status: assets.status, errorMessage: assets.errorMessage })
+    .select({
+      id: assets.id,
+      status: assets.status,
+      errorMessage: assets.errorMessage,
+      groupId: assets.groupId,
+      isGroupPrimary: assets.isGroupPrimary,
+    })
     .from(assets)
     .where(inArray(assets.id, ids));
 

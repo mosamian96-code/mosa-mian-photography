@@ -40,6 +40,7 @@ export async function PATCH(req: NextRequest) {
     aboutBio: string;
     socialInstagram: string;
     socialFacebook: string;
+    socialLinkedin: string;
     socialEmail: string;
   }>;
 

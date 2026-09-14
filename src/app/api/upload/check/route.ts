@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const existing = await db.query.assets.findFirst({
     where: eq(assets.sha256, sha256),
-    columns: { id: true, status: true, originalFilename: true },
+    columns: { id: true, status: true, originalFilename: true, groupId: true, isGroupPrimary: true },
   });
 
   // A duplicate caught here never reaches /api/upload/complete (the client skips the
@@ -39,5 +39,7 @@ export async function POST(req: NextRequest) {
     exists: Boolean(existing),
     assetId: existing?.id,
     status: existing?.status,
+    groupId: existing?.groupId,
+    isGroupPrimary: existing?.isGroupPrimary,
   });
 }

@@ -1,5 +1,7 @@
 import { StudioHeader } from "./studio-header";
 import { StudioProviders } from "./providers";
+import { StudioSidebar } from "./studio-sidebar";
+import { ThemeScript } from "./theme-toggle";
 
 export const metadata = {
   title: "Studio — Mosa Mian Photography",
@@ -14,9 +16,13 @@ export const dynamic = "force-dynamic";
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
     <StudioProviders>
-      <div className="min-h-screen bg-neutral-50 text-neutral-900">
+      <ThemeScript />
+      <div className="min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
         <StudioHeader />
-        <main className="mx-auto max-w-4xl px-6 py-10">{children}</main>
+        <div className="flex">
+          <StudioSidebar />
+          <main className="mx-auto w-full max-w-4xl px-6 py-10">{children}</main>
+        </div>
       </div>
     </StudioProviders>
   );

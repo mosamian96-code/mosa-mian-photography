@@ -21,7 +21,12 @@ async function renderOne(
   // before anything else touches them. Order matters: it must run before .resize().
   // Without it, stripping EXIF (below) would silently discard the only record of which
   // way the camera was held, leaving portrait/rotated shots sideways forever.
-  let pipeline = sharp(baseRaster).rotate().resize({ width, withoutEnlargement: true });
+  // failOn defaults to "warning" -- libvips treats even fully-recoverable JPEG quirks
+  // (e.g. "N extraneous bytes before marker", common from phone cameras and
+  // WhatsApp re-encoding) as fatal otherwise, aborting the whole ingest job for an
+  // image that actually decodes fine. "none" lets it decode as much as it can and
+  // only fail on genuinely unreadable data.
+  let pipeline = sharp(baseRaster, { failOn: "none" }).rotate().resize({ width, withoutEnlargement: true });
   // No .withMetadata() call anywhere in this file: sharp's default for a format
   // conversion is to drop all EXIF/IPTC/XMP from the output, which is exactly brief
   // section 5's "strip GPS and camera serial from every public derivative" — done by
@@ -73,7 +78,7 @@ async function renderWatermarkedOne(
   preparedMark: Buffer,
   position: WatermarkPosition,
 ): Promise<GeneratedDerivative> {
-  const resized = await sharp(baseRaster).rotate().resize({ width, withoutEnlargement: true }).toBuffer();
+  const resized = await sharp(baseRaster, { failOn: "none" }).rotate().resize({ width, withoutEnlargement: true }).toBuffer();
   const resizedWidth = (await sharp(resized).metadata()).width ?? width;
   const markForThisSize = await sharp(preparedMark).resize({ width: Math.round(resizedWidth * 0.2) }).toBuffer();
 
@@ -114,7 +119,7 @@ export async function generateWatermarkedDerivatives(
 
 /** Tiny inline blur placeholder, stored as a data URI directly in the DB (section 5). */
 export async function generateLqip(baseRaster: Buffer): Promise<string> {
-  const tiny = await sharp(baseRaster)
+  const tiny = await sharp(baseRaster, { failOn: "none" })
     .rotate()
     .resize({ width: 24, withoutEnlargement: true })
     .jpeg({ quality: 40 })
@@ -132,7 +137,7 @@ export async function generateLqip(baseRaster: Buffer): Promise<string> {
  */
 export function normalizeOrientation(buffer: Buffer, orientation: number | undefined): Promise<Buffer> {
   if (!orientation || orientation === 1) return Promise.resolve(buffer);
-  let pipeline = sharp(buffer);
+  let pipeline = sharp(buffer, { failOn: "none" });
   switch (orientation) {
     case 2:
       pipeline = pipeline.flop();

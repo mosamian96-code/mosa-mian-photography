@@ -1,11 +1,17 @@
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import NextAuth from "next-auth";
-import Resend from "next-auth/providers/resend";
+import Credentials from "next-auth/providers/credentials";
 import { db } from "@/lib/db";
 import { accounts, sessions, users, verificationTokens } from "@/lib/db/schema";
+import { verifyPassword } from "@/lib/password";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.toLowerCase();
+
+// "Remember me" duration vs. a plain session that doesn't survive a day -- see the
+// jwt callback below for how this actually gets applied to the token's expiry.
+const REMEMBER_ME_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const DEFAULT_SESSION_SECONDS = 60 * 60 * 12; // 12 hours
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
@@ -14,35 +20,46 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
-  session: { strategy: "jwt" },
-  pages: { signIn: "/studio/login", verifyRequest: "/studio/login/check-email" },
+  session: { strategy: "jwt", maxAge: REMEMBER_ME_SECONDS },
+  pages: { signIn: "/studio/login" },
   providers: [
-    Resend({
-      apiKey: process.env.RESEND_API_KEY,
-      // Resend only accepts a `from` address on a domain verified in that Resend
-      // account, except its built-in onboarding@resend.dev sandbox sender, which
-      // delivers only to the account owner's own email — exactly ADMIN_EMAIL here.
-      // Switch this to a mosamianphotography.com address once that domain is
-      // verified in Resend (see brief section 3 / docs/deploy.md).
-      from: "Mosa Mian Photography <onboarding@resend.dev>",
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+        remember: { label: "Remember me", type: "text" },
+      },
+      async authorize(credentials) {
+        const email = String(credentials?.email ?? "")
+          .toLowerCase()
+          .trim();
+        const password = String(credentials?.password ?? "");
+        // Single admin account: reject anything else before even touching the DB,
+        // same as the old magic-link flow did.
+        if (!ADMIN_EMAIL || !password || email !== ADMIN_EMAIL) return null;
+
+        const dbUser = await db.query.users.findFirst({ where: eq(users.email, email) });
+        if (!dbUser?.passwordHash) return null;
+        if (!verifyPassword(password, dbUser.passwordHash)) return null;
+
+        return {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          remember: credentials?.remember === "true",
+        };
+      },
     }),
   ],
   callbacks: {
-    // Single admin account: reject the magic-link email step entirely for any other
-    // address, rather than creating a user row and locking it out downstream.
-    async signIn({ user }) {
-      if (!ADMIN_EMAIL) return false;
-      return user.email?.toLowerCase() === ADMIN_EMAIL;
-    },
-    async jwt({ token, trigger, session, user }) {
-      if (user?.id) {
-        const dbUser = await db.query.users.findFirst({ where: eq(users.id, user.id) });
-        token.mfaEnrolled = Boolean(dbUser?.mfaSecret);
-        token.mfaVerified = false;
-      }
-      if (trigger === "update" && session) {
-        if (typeof session.mfaEnrolled === "boolean") token.mfaEnrolled = session.mfaEnrolled;
-        if (typeof session.mfaVerified === "boolean") token.mfaVerified = session.mfaVerified;
+    async jwt({ token, user }) {
+      // Only present on the initial sign-in call, not on subsequent token refreshes
+      // -- expiry is fixed at login time and doesn't get extended by later activity,
+      // so "remember me" means "this login lasts 30 days," not a sliding window.
+      if (user) {
+        const remember = (user as { remember?: boolean }).remember ?? false;
+        const seconds = remember ? REMEMBER_ME_SECONDS : DEFAULT_SESSION_SECONDS;
+        token.exp = Math.floor(Date.now() / 1000) + seconds;
       }
       return token;
     },
@@ -51,8 +68,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // default -- token.sub carries it (Auth.js sets it from user.id at sign-in).
       // Every route that authorizes by session.user.id depends on this.
       if (token.sub) session.user.id = token.sub;
-      session.mfaEnrolled = Boolean(token.mfaEnrolled);
-      session.mfaVerified = Boolean(token.mfaVerified);
       return session;
     },
   },

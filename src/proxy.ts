@@ -9,24 +9,13 @@ export default auth((req) => {
   const session = req.auth;
 
   const isAuthRoute = pathname.startsWith("/studio/login");
-  const isMfaRoute = pathname === "/studio/setup-mfa" || pathname === "/studio/verify";
 
   if (!session) {
     if (isAuthRoute) return;
     return NextResponse.redirect(new URL("/studio/login", req.url));
   }
 
-  if (!session.mfaEnrolled) {
-    if (pathname === "/studio/setup-mfa") return;
-    return NextResponse.redirect(new URL("/studio/setup-mfa", req.url));
-  }
-
-  if (!session.mfaVerified) {
-    if (pathname === "/studio/verify") return;
-    return NextResponse.redirect(new URL("/studio/verify", req.url));
-  }
-
-  if (isAuthRoute || isMfaRoute) {
+  if (isAuthRoute) {
     return NextResponse.redirect(new URL("/studio", req.url));
   }
 });

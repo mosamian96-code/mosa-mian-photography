@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicHeader } from "@/components/public-header";
+import { PublicShell } from "@/components/public-shell";
+import { SiteSearchBox } from "@/components/site-search-box";
 import { searchPublicContent } from "@/lib/public-site/resolve";
 
 type Props = { searchParams: Promise<{ q?: string }> };
@@ -15,11 +16,14 @@ export default async function SearchPage({ searchParams }: Props) {
   const hasResults = results.folders.length + results.galleries.length + results.keywords.length > 0;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <PublicHeader />
+    <PublicShell>
+    <div className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="text-2xl text-neutral-900" style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}>
         {query ? `Results for "${query}"` : "Search"}
       </h1>
+      <div className="mt-4">
+        <SiteSearchBox />
+      </div>
 
       {query && !hasResults ? <p className="mt-6 text-sm text-neutral-400">Nothing found.</p> : null}
 
@@ -67,6 +71,7 @@ export default async function SearchPage({ searchParams }: Props) {
           </ul>
         </section>
       ) : null}
-    </main>
+    </div>
+    </PublicShell>
   );
 }

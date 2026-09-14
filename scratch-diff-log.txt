@@ -1,0 +1,137 @@
+loaded 50198 existing DB hashes
+walking E:\smugmug-export
+found 55353 candidate files on disk
+55353 left to hash
+hashed 500/55353 this run (0.0m elapsed, ~97087/min, 500 missing so far)
+hashed 1000/55353 this run (0.0m elapsed, ~62305/min, 989 missing so far)
+hashed 1500/55353 this run (0.1m elapsed, ~10648/min, 1400 missing so far)
+hashed 2000/55353 this run (0.6m elapsed, ~3569/min, 1655 missing so far)
+hashed 2500/55353 this run (1.1m elapsed, ~2274/min, 1672 missing so far)
+hashed 3000/55353 this run (2.4m elapsed, ~1235/min, 1672 missing so far)
+hashed 3500/55353 this run (4.6m elapsed, ~761/min, 1672 missing so far)
+hashed 4000/55353 this run (6.5m elapsed, ~619/min, 1672 missing so far)
+hashed 4500/55353 this run (8.3m elapsed, ~544/min, 1672 missing so far)
+hashed 5000/55353 this run (10.1m elapsed, ~496/min, 1672 missing so far)
+hashed 5500/55353 this run (11.9m elapsed, ~463/min, 1672 missing so far)
+hashed 6000/55353 this run (13.8m elapsed, ~436/min, 1672 missing so far)
+hashed 6500/55353 this run (15.6m elapsed, ~417/min, 1672 missing so far)
+hashed 7000/55353 this run (17.5m elapsed, ~400/min, 1672 missing so far)
+hashed 7500/55353 this run (19.4m elapsed, ~388/min, 1672 missing so far)
+hashed 8000/55353 this run (21.2m elapsed, ~377/min, 1672 missing so far)
+hashed 8500/55353 this run (23.2m elapsed, ~367/min, 1672 missing so far)
+hashed 9000/55353 this run (24.9m elapsed, ~361/min, 1672 missing so far)
+hashed 9500/55353 this run (27.0m elapsed, ~352/min, 1672 missing so far)
+hashed 10000/55353 this run (28.6m elapsed, ~349/min, 1672 missing so far)
+hashed 10500/55353 this run (30.4m elapsed, ~346/min, 1672 missing so far)
+hashed 11000/55353 this run (32.3m elapsed, ~341/min, 1672 missing so far)
+hashed 11500/55353 this run (34.2m elapsed, ~337/min, 1672 missing so far)
+hashed 12000/55353 this run (36.0m elapsed, ~333/min, 1672 missing so far)
+hashed 12500/55353 this run (37.8m elapsed, ~331/min, 1672 missing so far)
+hashed 13000/55353 this run (39.6m elapsed, ~328/min, 1672 missing so far)
+hashed 13500/55353 this run (41.6m elapsed, ~325/min, 1672 missing so far)
+hashed 14000/55353 this run (43.5m elapsed, ~322/min, 1672 missing so far)
+hashed 14500/55353 this run (45.4m elapsed, ~319/min, 1672 missing so far)
+hashed 15000/55353 this run (47.4m elapsed, ~316/min, 1672 missing so far)
+hashed 15500/55353 this run (49.5m elapsed, ~313/min, 1672 missing so far)
+hashed 16000/55353 this run (51.6m elapsed, ~310/min, 1672 missing so far)
+hashed 16500/55353 this run (53.6m elapsed, ~308/min, 1672 missing so far)
+hashed 17000/55353 this run (55.7m elapsed, ~305/min, 1672 missing so far)
+hashed 17500/55353 this run (57.5m elapsed, ~304/min, 1672 missing so far)
+hashed 18000/55353 this run (61.0m elapsed, ~295/min, 1672 missing so far)
+hashed 18500/55353 this run (64.5m elapsed, ~287/min, 1672 missing so far)
+hashed 19000/55353 this run (67.5m elapsed, ~282/min, 1672 missing so far)
+hashed 19500/55353 this run (69.7m elapsed, ~280/min, 1672 missing so far)
+hashed 20000/55353 this run (74.4m elapsed, ~269/min, 1672 missing so far)
+hashed 20500/55353 this run (76.9m elapsed, ~267/min, 1672 missing so far)
+hashed 21000/55353 this run (79.5m elapsed, ~264/min, 1672 missing so far)
+hashed 21500/55353 this run (82.1m elapsed, ~262/min, 1672 missing so far)
+hashed 22000/55353 this run (83.6m elapsed, ~263/min, 1672 missing so far)
+hashed 22500/55353 this run (85.2m elapsed, ~264/min, 1672 missing so far)
+hashed 23000/55353 this run (87.9m elapsed, ~262/min, 1672 missing so far)
+hashed 23500/55353 this run (90.7m elapsed, ~259/min, 1672 missing so far)
+loaded 50198 existing DB hashes
+resuming: 23929 files already hashed in a prior run
+walking E:\smugmug-export
+node:internal/fs/promises:956
+  const result = await PromisePrototypeThen(
+                 ^
+
+Error: ENOENT: no such file or directory, scandir 'E:\smugmug-export'
+    at async readdir (node:internal/fs/promises:956:18)
+    at async walk (file:///C:/Users/musan/mosa-mian-photography/scratch-diff-missing.mjs:27:19)
+    at async main (file:///C:/Users/musan/mosa-mian-photography/scratch-diff-missing.mjs:76:20) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'scandir',
+  path: 'E:\\smugmug-export'
+}
+
+Node.js v24.18.1
+loaded 50198 existing DB hashes
+resuming: 23929 files already hashed in a prior run
+walking E:\smugmug-export
+found 55353 candidate files on disk
+31424 left to hash
+hashed 500/31424 this run (3.3m elapsed, ~151/min, 0 missing so far)
+hashed 1000/31424 this run (5.7m elapsed, ~175/min, 0 missing so far)
+hashed 1500/31424 this run (7.7m elapsed, ~194/min, 0 missing so far)
+hashed 2000/31424 this run (9.8m elapsed, ~204/min, 0 missing so far)
+hashed 2500/31424 this run (11.4m elapsed, ~218/min, 0 missing so far)
+hashed 3000/31424 this run (13.3m elapsed, ~226/min, 0 missing so far)
+hashed 3500/31424 this run (15.3m elapsed, ~229/min, 0 missing so far)
+hashed 4000/31424 this run (17.4m elapsed, ~230/min, 0 missing so far)
+hashed 4500/31424 this run (19.6m elapsed, ~230/min, 0 missing so far)
+hashed 5000/31424 this run (21.9m elapsed, ~228/min, 0 missing so far)
+hashed 5500/31424 this run (23.8m elapsed, ~231/min, 0 missing so far)
+hashed 6000/31424 this run (26.0m elapsed, ~231/min, 0 missing so far)
+hashed 6500/31424 this run (27.8m elapsed, ~234/min, 0 missing so far)
+hashed 7000/31424 this run (29.3m elapsed, ~239/min, 0 missing so far)
+hashed 7500/31424 this run (30.1m elapsed, ~249/min, 0 missing so far)
+hashed 8000/31424 this run (32.1m elapsed, ~249/min, 0 missing so far)
+hashed 8500/31424 this run (33.9m elapsed, ~250/min, 0 missing so far)
+hashed 9000/31424 this run (36.6m elapsed, ~246/min, 0 missing so far)
+hashed 9500/31424 this run (39.1m elapsed, ~243/min, 0 missing so far)
+hashed 10000/31424 this run (41.3m elapsed, ~242/min, 0 missing so far)
+hashed 10500/31424 this run (43.5m elapsed, ~241/min, 0 missing so far)
+hashed 11000/31424 this run (45.4m elapsed, ~242/min, 0 missing so far)
+hashed 11500/31424 this run (47.5m elapsed, ~242/min, 0 missing so far)
+hashed 12000/31424 this run (49.8m elapsed, ~241/min, 0 missing so far)
+hashed 12500/31424 this run (51.8m elapsed, ~241/min, 0 missing so far)
+hashed 13000/31424 this run (53.7m elapsed, ~242/min, 0 missing so far)
+hashed 13500/31424 this run (55.4m elapsed, ~243/min, 0 missing so far)
+hashed 14000/31424 this run (57.5m elapsed, ~243/min, 0 missing so far)
+hashed 14500/31424 this run (59.2m elapsed, ~245/min, 0 missing so far)
+hashed 15000/31424 this run (61.5m elapsed, ~244/min, 0 missing so far)
+hashed 15500/31424 this run (64.8m elapsed, ~239/min, 0 missing so far)
+hashed 16000/31424 this run (68.0m elapsed, ~235/min, 0 missing so far)
+hashed 16500/31424 this run (71.0m elapsed, ~232/min, 0 missing so far)
+hashed 17000/31424 this run (74.1m elapsed, ~229/min, 0 missing so far)
+hashed 17500/31424 this run (77.1m elapsed, ~227/min, 0 missing so far)
+hashed 18000/31424 this run (78.7m elapsed, ~229/min, 0 missing so far)
+hashed 18500/31424 this run (80.7m elapsed, ~229/min, 0 missing so far)
+hashed 19000/31424 this run (83.9m elapsed, ~227/min, 0 missing so far)
+hashed 19500/31424 this run (86.9m elapsed, ~224/min, 0 missing so far)
+hashed 20000/31424 this run (90.5m elapsed, ~221/min, 0 missing so far)
+hashed 20500/31424 this run (92.2m elapsed, ~222/min, 0 missing so far)
+hashed 21000/31424 this run (94.0m elapsed, ~224/min, 0 missing so far)
+hashed 21500/31424 this run (96.4m elapsed, ~223/min, 0 missing so far)
+hashed 22000/31424 this run (99.0m elapsed, ~222/min, 0 missing so far)
+hashed 22500/31424 this run (101.8m elapsed, ~221/min, 0 missing so far)
+hashed 23000/31424 this run (105.4m elapsed, ~218/min, 0 missing so far)
+hashed 23500/31424 this run (108.9m elapsed, ~216/min, 0 missing so far)
+hashed 24000/31424 this run (111.8m elapsed, ~215/min, 0 missing so far)
+hashed 24500/31424 this run (114.0m elapsed, ~215/min, 0 missing so far)
+hashed 25000/31424 this run (117.2m elapsed, ~213/min, 0 missing so far)
+hashed 25500/31424 this run (120.7m elapsed, ~211/min, 0 missing so far)
+hashed 26000/31424 this run (124.2m elapsed, ~209/min, 0 missing so far)
+hashed 26500/31424 this run (125.7m elapsed, ~211/min, 0 missing so far)
+hashed 27000/31424 this run (125.9m elapsed, ~215/min, 0 missing so far)
+hashed 27500/31424 this run (128.2m elapsed, ~215/min, 0 missing so far)
+hashed 28000/31424 this run (130.6m elapsed, ~214/min, 0 missing so far)
+hashed 28500/31424 this run (133.4m elapsed, ~214/min, 0 missing so far)
+hashed 29000/31424 this run (136.1m elapsed, ~213/min, 0 missing so far)
+hashed 29500/31424 this run (138.3m elapsed, ~213/min, 0 missing so far)
+hashed 30000/31424 this run (140.7m elapsed, ~213/min, 0 missing so far)
+hashed 30500/31424 this run (142.9m elapsed, ~213/min, 0 missing so far)
+hashed 31000/31424 this run (145.1m elapsed, ~214/min, 0 missing so far)
+this run done. 0 newly-found missing files. Total processed overall: 55353/55353

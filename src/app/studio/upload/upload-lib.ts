@@ -24,7 +24,13 @@ async function api<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-export type CheckResult = { exists: boolean; assetId?: string; status?: string };
+export type CheckResult = {
+  exists: boolean;
+  assetId?: string;
+  status?: string;
+  groupId?: string | null;
+  isGroupPrimary?: boolean;
+};
 
 export function checkDuplicate(sha256: string, batchId: string) {
   return api<CheckResult>("/api/upload/check", { sha256, batchId });
@@ -32,6 +38,18 @@ export function checkDuplicate(sha256: string, batchId: string) {
 
 export function createBatch(totalFiles: number) {
   return api<{ batchId: string }>("/api/upload/batch", { totalFiles });
+}
+
+// A RAW+JPEG+.xmp trio sharing a basename collapses into one asset_group with a
+// single "primary" (the ingest worker's pick for what's actually displayable) --
+// attaching every sibling to a gallery would create redundant/broken items for the
+// ones that aren't it, so callers should only attach when this is true.
+export function isAttachEligible(groupId: string | null | undefined, isGroupPrimary: boolean | undefined) {
+  return !groupId || Boolean(isGroupPrimary);
+}
+
+export function addToGallery(galleryId: string, assetId: string) {
+  return api<{ ok: true; added: number }>(`/api/galleries/${galleryId}/items`, { assetIds: [assetId] });
 }
 
 type InitResult =

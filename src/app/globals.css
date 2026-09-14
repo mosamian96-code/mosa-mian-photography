@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Class-scoped dark mode, /studio only -- the public site's own design-tokens.md
+   decision ("light ground only, no dark mode in v1") is about the customer-facing
+   site, not this internal admin tool. Tailwind v4 defaults `dark:` to OS preference;
+   this makes it respond to a `.dark` class instead, toggled by ThemeToggle and
+   applied before paint by the inline script in studio/layout.tsx (avoids a
+   flash-of-wrong-theme on load). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Design tokens — see docs/design-tokens.md. Five neutrals, one type pairing, a
    4px spacing scale, one radius. Light ground only, no dark-mode media query, no
    theme toggle in v1 (decided 2026-08-18). */
@@ -11,6 +19,16 @@
   --ink: #171717;
 
   --radius: 4px;
+
+  /* Motion language ("Focus Pull" -- see DECISIONS.md): one physical metaphor, a lens
+     racking into focus, reused everywhere a photograph appears instead of a different
+     effect per section. Two easings only -- a decelerate for anything settling into
+     place, a symmetric ease for crossfades -- and three durations. */
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-swap: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 150ms;
+  --dur-base: 400ms;
+  --dur-slow: 650ms;
 }
 
 @theme inline {
@@ -68,4 +86,213 @@ body {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* The two purely-decorative, JS-positioned effects (cursor ring, magnetic button
+     offset) have no CSS transition to neutralize above -- they're inline transforms
+     applied on every pointer move. Their own JS also checks matchMedia and disables
+     itself, but hiding/zeroing here too means a stale inline transform can never be
+     visible even for a single frame before that JS runs. */
+  .cursor-ring {
+    display: none !important;
+  }
+  .magnetic {
+    transform: none !important;
+  }
+}
+
+/* Focus Pull motion language -- see docs/design-tokens.md and DECISIONS.md. One
+   metaphor (a lens racking into focus) reused for every interactive photograph:
+   image reveal, grid hover/focus, and the lightbox open transition all share these
+   same keyframes/classes instead of one-off effects per component. */
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.reveal {
+  opacity: 0;
+}
+.reveal.is-visible {
+  animation: reveal-up var(--dur-slow) var(--ease-settle) forwards;
+}
+
+/* Four corner brackets, positioned by the component; each is a plain absolutely-
+   positioned element with two borders forming an L. Off-brand skeuomorphism (no
+   camera-body chrome, no glow) -- just a thin viewfinder-style frame. */
+.focus-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-settle);
+}
+.group:hover .focus-frame,
+.group:focus-visible .focus-frame,
+.focus-frame.is-active {
+  opacity: 1;
+}
+.focus-bracket {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-color: white;
+  border-style: solid;
+  border-width: 0;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity var(--dur-base) var(--ease-settle),
+    transform var(--dur-base) var(--ease-settle);
+}
+.group:hover .focus-bracket,
+.group:focus-visible .focus-bracket,
+.focus-frame.is-active .focus-bracket {
+  opacity: 0.92;
+  transform: scale(1);
+}
+.focus-bracket.tl {
+  top: 8px;
+  left: 8px;
+  border-top-width: 1.5px;
+  border-left-width: 1.5px;
+}
+.focus-bracket.tr {
+  top: 8px;
+  right: 8px;
+  border-top-width: 1.5px;
+  border-right-width: 1.5px;
+}
+.focus-bracket.bl {
+  bottom: 8px;
+  left: 8px;
+  border-bottom-width: 1.5px;
+  border-left-width: 1.5px;
+}
+.focus-bracket.br {
+  bottom: 8px;
+  right: 8px;
+  border-bottom-width: 1.5px;
+  border-right-width: 1.5px;
+}
+
+.focus-image {
+  transition:
+    transform var(--dur-slow) var(--ease-settle),
+    filter var(--dur-slow) var(--ease-settle);
+}
+.group:hover .focus-image,
+.group:focus-visible .focus-image {
+  transform: scale(1.015);
+}
+
+/* Only hides the native pointer over [data-cursor] targets once the ring is actually
+   confirmed active (fine pointer, motion not reduced, JS mounted) -- the class is set
+   by CursorRing itself, so touch devices, keyboard-only visits, and reduced-motion
+   visits never lose their cursor with nothing standing in for it. */
+.has-cursor-ring [data-cursor] {
+  cursor: none;
+}
+
+/* Sidebar nav links: a thin underline sweeps in from the left on hover/focus rather
+   than an instant color-only change -- same settle easing as everything else. */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  width: 100%;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-settle);
+}
+.nav-link:hover::after,
+.nav-link:focus-visible::after {
+  transform: scaleX(1);
+}
+
+/* Quiet cinematic entrance for the homepage hero -- a slow settle from a hair of
+   zoom, not a flourish that delays the photo being visible (it paints immediately,
+   this only animates its scale). Plays once on load, never on hover. */
+@keyframes hero-settle {
+  from {
+    transform: scale(1.045);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes lightbox-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes lightbox-backdrop-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes lightbox-image-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  margin-left: -14px;
+  margin-top: -14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  mix-blend-mode: difference;
+  pointer-events: none;
+  z-index: 999;
+  transition:
+    width var(--dur-micro) var(--ease-settle),
+    height var(--dur-micro) var(--ease-settle),
+    margin var(--dur-micro) var(--ease-settle),
+    opacity var(--dur-micro) linear;
+  will-change: transform;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cursor-ring-label {
+  color: #fff;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--dur-micro) linear;
 }

@@ -14,24 +14,24 @@ export default async function StudioDashboard() {
 
   return (
     <div>
-      <h1 className="text-lg font-medium text-neutral-900">Foundation health</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">Foundation health</h1>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
         Postgres, Redis, and a B2 round-trip (write, read, delete a test object), checked live.
       </p>
-      <dl className="mt-6 divide-y divide-neutral-200 rounded border border-neutral-200">
+      <dl className="mt-6 divide-y divide-neutral-200 rounded border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
         {Object.entries(health.checks).map(([name, check]) => (
           <div key={name} className="flex items-center justify-between px-4 py-3">
-            <dt className="flex items-center gap-2 text-sm capitalize text-neutral-900">
+            <dt className="flex items-center gap-2 text-sm capitalize text-neutral-900 dark:text-neutral-100">
               <StatusDot ok={check.ok} />
               {name}
             </dt>
-            <dd className="text-sm text-neutral-500">
+            <dd className="text-sm text-neutral-500 dark:text-neutral-400">
               {check.ok ? `${check.latencyMs}ms` : (check.error ?? "failed")}
             </dd>
           </div>
         ))}
       </dl>
-      <p className="mt-4 text-xs text-neutral-400">Checked {health.timestamp}</p>
+      <p className="mt-4 text-xs text-neutral-400 dark:text-neutral-500">Checked {health.timestamp}</p>
     </div>
   );
 }

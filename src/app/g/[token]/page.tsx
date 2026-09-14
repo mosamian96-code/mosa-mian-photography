@@ -68,6 +68,9 @@ export default async function ClientGalleryPage({ params }: Props) {
         {images.length > 0 ? (
           <GalleryView
             images={images}
+            showCameraInfo={gallery.showCameraInfo}
+            showFilenames={gallery.showFilenames}
+            slideshowEnabled={gallery.slideshowEnabled}
             clientControls={{
               clientAccessId: link.id,
               canFavorite: link.canFavorite,

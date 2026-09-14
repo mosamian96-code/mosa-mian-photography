@@ -1,18 +1,25 @@
 "use server";
 
+import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { signIn } from "@/lib/auth";
 
-export async function requestMagicLink(formData: FormData) {
-  const email = String(formData.get("email") ?? "").toLowerCase().trim();
-  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+export async function signInWithPassword(_prevState: string | null, formData: FormData) {
+  const email = String(formData.get("email") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const remember = formData.get("remember") === "on";
 
-  // Only ever send mail to the one allowed address, but always land on the same
-  // "check your email" page regardless — so the response gives no signal about
-  // whether the submitted address matched.
-  if (email && adminEmail && email === adminEmail) {
-    await signIn("resend", { email, redirectTo: "/studio" });
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      remember: remember ? "true" : "false",
+      redirect: false,
+    });
+  } catch (err) {
+    if (err instanceof AuthError) return "Incorrect email or password.";
+    throw err;
   }
 
-  redirect("/studio/login/check-email");
+  redirect("/studio");
 }

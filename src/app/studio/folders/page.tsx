@@ -48,8 +48,8 @@ export default function FoldersPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-medium text-neutral-900">Folders</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">Folders</h1>
+      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
         Top-level folders. Each can hold nested subfolders and galleries.
       </p>
 
@@ -60,30 +60,32 @@ export default function FoldersPage() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
-          className="flex-1 rounded border border-neutral-300 px-3 py-1.5 text-sm outline-none focus:border-neutral-900"
+          className="flex-1 rounded border border-neutral-300 px-3 py-1.5 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:focus:border-neutral-400"
         />
         <button
           type="submit"
-          className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700"
+          className="rounded bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
         >
           Create
         </button>
       </form>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
 
-      <ul className="mt-6 divide-y divide-neutral-200 rounded border border-neutral-200">
+      <ul className="mt-6 divide-y divide-neutral-200 rounded border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
         {roots.map((f) => (
           <li key={f.id}>
             <Link
               href={`/studio/folders/${f.id}`}
-              className="flex items-center justify-between px-4 py-3 text-sm hover:bg-neutral-50"
+              className="flex items-center justify-between px-4 py-3 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-900"
             >
-              <span className="text-neutral-900">{f.title}</span>
-              <span className="text-neutral-400">{f.visibility}</span>
+              <span className="text-neutral-900 dark:text-neutral-100">{f.title}</span>
+              <span className="text-neutral-400 dark:text-neutral-500">{f.visibility}</span>
             </Link>
           </li>
         ))}
-        {roots.length === 0 ? <li className="px-4 py-6 text-sm text-neutral-400">No folders yet.</li> : null}
+        {roots.length === 0 ? (
+          <li className="px-4 py-6 text-sm text-neutral-400 dark:text-neutral-500">No folders yet.</li>
+        ) : null}
       </ul>
     </div>
   );

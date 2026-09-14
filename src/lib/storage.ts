@@ -11,10 +11,20 @@ import {
   S3Client,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import type { Readable } from "node:stream";
 
 // B2 speaks the S3 API, so the generic S3 client works unmodified — this is the whole
 // reason presigned multipart upload (section 6) works without a custom B2 SDK.
+//
+// requestHandler timeouts are deliberate, not defaults: the AWS SDK v3's Node HTTP
+// handler has no timeout at all unless one is configured, so a connection that hangs
+// (a dead socket, a stalled tunnel) blocks forever with nothing to trigger the SDK's
+// own retry logic -- the exact bug already found and fixed once tonight in the
+// SmugMug export client (undiagnosed "stalls" that were really unbounded fetch()
+// calls). 10s to establish a connection, 120s per request is generous enough for a
+// large original on a slow link without being effectively unbounded.
 export const b2 = new S3Client({
   region: "auto",
   endpoint: process.env.B2_ENDPOINT,
@@ -23,6 +33,10 @@ export const b2 = new S3Client({
     secretAccessKey: process.env.B2_APPLICATION_KEY!,
   },
   forcePathStyle: true,
+  requestHandler: new NodeHttpHandler({
+    connectionTimeout: 10_000,
+    requestTimeout: 120_000,
+  }),
 });
 
 export const B2_BUCKET = process.env.B2_BUCKET!;
@@ -61,6 +75,17 @@ export async function putObject(key: string, body: Buffer | string, contentType:
 export async function getObjectText(key: string) {
   const result = await b2.send(new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }));
   return result.Body?.transformToString();
+}
+
+/** Raw readable stream for one object -- used for zip-download endpoints, which
+ * append each original straight into the archive instead of buffering full files in
+ * memory (a gallery can run into the hundreds of originals at 10-20MB each). The SDK
+ * types this as a union across environments, but running under the Node runtime
+ * (declared in every route that calls this) it's always a real Node Readable. */
+export async function getObjectStream(key: string): Promise<Readable> {
+  const result = await b2.send(new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }));
+  if (!result.Body) throw new Error(`no body for ${key}`);
+  return result.Body as Readable;
 }
 
 export async function deleteObject(key: string) {

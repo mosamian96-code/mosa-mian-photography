@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, derivatives, galleries, galleryItems } from "@/lib/db/schema";
@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       derivatives,
       and(eq(derivatives.assetId, assets.id), eq(derivatives.variant, "400"), eq(derivatives.format, "webp")),
     )
-    .where(eq(galleryItems.galleryId, id))
+    .where(and(eq(galleryItems.galleryId, id), isNull(assets.deletedAt)))
     .orderBy(asc(galleryItems.position));
 
   return NextResponse.json({
@@ -55,10 +55,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     password: string;
     expiresAt: string | null;
     sortMode: "capture_date" | "upload_date" | "filename" | "manual";
+    sortDirection: "asc" | "desc" | null;
     downloadsPolicy: "off" | "web" | "original";
+    publicDownloadsPolicy: "off" | "web" | "original";
+    metaKeywords: string | null;
+    showCameraInfo: boolean;
+    showFilenames: boolean;
+    slideshowEnabled: boolean;
+    mapEnabled: boolean;
+    rightClickMessage: string | null;
+    searchable: boolean;
     coverAssetId: string;
     watermarkId: string | null;
     publish: boolean;
+    position: number;
   }>;
 
   const { password, publish, expiresAt, ...rest } = body;
