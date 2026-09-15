@@ -28,7 +28,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
   let buffer: Buffer;
   try {
     buffer = await getObjectBuffer(key);
-  } catch {
+  } catch (err) {
+    console.error("[cdn] getObjectBuffer failed", key, err);
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
