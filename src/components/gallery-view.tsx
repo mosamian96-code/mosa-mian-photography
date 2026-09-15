@@ -30,6 +30,21 @@ function pickSrc(urls: Record<string, string>, variant: string) {
   return { avif: urls[`avif${variant}`], webp: urls[`webp${variant}`] };
 }
 
+// The grid used to always request the 400px derivative regardless of how wide the
+// cell actually rendered -- fine at the "Small" row height, but a landscape photo at
+// "Large" (420px row height, so often 600px+ wide once its aspect ratio is applied)
+// was stretching a 400px source across 600+ CSS pixels, before accounting for
+// retina displays needing roughly double that again. Pick the smallest available
+// variant that still covers the rendered width at up to 2x pixel density, so a
+// closely-matched crisp source is used without following through to the full 2560
+// on every thumbnail.
+function pickVariantForWidth(width: number): "400" | "1200" | "2560" {
+  const target = width * 2;
+  if (target <= 400) return "400";
+  if (target <= 1200) return "1200";
+  return "2560";
+}
+
 // How many grid items are plausibly visible in the first viewport (mobile-first,
 // small galleries can fit several rows above the fold) -- these skip lazy loading
 // and get fetchpriority hints; brief sections 8/15 want this only for "the hero,"
@@ -183,7 +198,7 @@ export function GalleryView({
         gap={4}
         renderItem={(_gridItem, width, height, index) => {
           const image = images[index];
-          const src = pickSrc(image.urls, "400");
+          const src = pickSrc(image.urls, pickVariantForWidth(width));
           const isEager = index < EAGER_COUNT;
           const isVideo = image.kind === "video";
           return (

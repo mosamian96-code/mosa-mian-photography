@@ -121,14 +121,19 @@ async function loadFolderSection(folder: Folder): Promise<FolderSection> {
 
         const [coverAsset, coverDerivative, hoverDerivative] = await Promise.all([
           coverAssetId ? db.query.assets.findFirst({ where: eq(assets.id, coverAssetId), columns: { lqip: true } }) : null,
+          // "1200", not "400": these cover cards render across 1/2 to 1/4 of the page
+          // width (folder-section-grid.tsx's 2/3/4-column grid), easily 300-450 CSS
+          // px, which needed 600-900px of actual source on any retina display -- the
+          // 400px derivative was stretched and soft here for the same reason the
+          // photo grid was (just fixed separately in gallery-view.tsx).
           coverAssetId
             ? db.query.derivatives.findFirst({
-                where: and(eq(derivatives.assetId, coverAssetId), eq(derivatives.variant, "400"), eq(derivatives.format, "webp")),
+                where: and(eq(derivatives.assetId, coverAssetId), eq(derivatives.variant, "1200"), eq(derivatives.format, "webp")),
               })
             : null,
           hoverAssetId
             ? db.query.derivatives.findFirst({
-                where: and(eq(derivatives.assetId, hoverAssetId), eq(derivatives.variant, "400"), eq(derivatives.format, "webp")),
+                where: and(eq(derivatives.assetId, hoverAssetId), eq(derivatives.variant, "1200"), eq(derivatives.format, "webp")),
               })
             : null,
         ]);
