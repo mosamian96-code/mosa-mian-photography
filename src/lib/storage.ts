@@ -25,6 +25,16 @@ import type { Readable } from "node:stream";
 // SmugMug export client (undiagnosed "stalls" that were really unbounded fetch()
 // calls). 10s to establish a connection, 120s per request is generous enough for a
 // large original on a slow link without being effectively unbounded.
+//
+// keepAlive: false is also deliberate, not an oversight -- this client lives for the
+// lifetime of the app process (hours/days), and the default keep-alive agent pools
+// sockets that B2 (or something between the VPS and it) can close server-side while
+// idle without telling Node. The next request to reuse that socket fails with a
+// connection error that looked, in production, like "photo thumbnails and downloads
+// intermittently 404 after the app's been up for a while, works again right after a
+// restart" -- a fresh connection per request costs a bit of latency but removes the
+// whole bug class. maxAttempts adds a retry safety net for any other transient
+// network blip on top of that.
 export const b2 = new S3Client({
   region: "auto",
   endpoint: process.env.B2_ENDPOINT,
@@ -33,9 +43,12 @@ export const b2 = new S3Client({
     secretAccessKey: process.env.B2_APPLICATION_KEY!,
   },
   forcePathStyle: true,
+  maxAttempts: 5,
   requestHandler: new NodeHttpHandler({
     connectionTimeout: 10_000,
     requestTimeout: 120_000,
+    httpsAgent: { keepAlive: false },
+    httpAgent: { keepAlive: false },
   }),
 });
 
