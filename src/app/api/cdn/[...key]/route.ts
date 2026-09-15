@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { logError } from "@/lib/error-log";
 import { getObjectBuffer } from "@/lib/storage";
 
 export const runtime = "nodejs";
+// logError touches the DB client, which throws when DATABASE_URL is unset -- the
+// exact case during the Docker build stage. Without this, build-time page-data
+// collection crashes the same way it did for the password-reset routes earlier.
+export const dynamic = "force-dynamic";
 
 // Public derivatives, proxied rather than served from a public B2 bucket (brief
 // section 5: "public via Cloudflare, immutable, 1 year cache"). B2 has no per-prefix
@@ -29,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ key
   try {
     buffer = await getObjectBuffer(key);
   } catch (err) {
-    console.error("[cdn] getObjectBuffer failed", key, err);
+    await logError("cdn", err instanceof Error ? err : new Error(`getObjectBuffer failed for ${key}: ${String(err)}`));
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 

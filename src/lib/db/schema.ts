@@ -438,6 +438,25 @@ export const redirects = pgTable("redirect", {
 // bio, social links) -- singleton row, fixed id enforces there's ever only one.
 // profileAssetId/heroAssetId reference existing library assets rather than a separate
 // upload path, reusing the same derivative pipeline every other photo goes through.
+// Surfaces server-side errors in the studio admin instead of requiring SSH access
+// to read Docker logs -- see src/lib/error-log.ts. Deliberately separate from the
+// existing job/asset error columns (ingest failures already persist there); this
+// table is for everything else -- request-handler errors that had nowhere to go
+// before tonight and were only found by manually grepping container logs.
+export const errorLogs = pgTable(
+  "error_log",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    context: text("context").notNull(),
+    message: text("message").notNull(),
+    stack: text("stack"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [index("error_log_created_at_idx").on(t.createdAt)],
+);
+
 export const siteSettings = pgTable("site_settings", {
   id: text("id").primaryKey().default("singleton"),
   profileAssetId: text("profile_asset_id").references(() => assets.id, { onDelete: "set null" }),

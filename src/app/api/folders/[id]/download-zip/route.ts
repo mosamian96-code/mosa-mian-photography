@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, folders, galleries, galleryItems } from "@/lib/db/schema";
+import { logError } from "@/lib/error-log";
 import { requireAdminSession } from "@/lib/require-admin";
 import { getObjectStream } from "@/lib/storage";
 
@@ -59,7 +60,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       }
       await archive.finalize();
     } catch (err) {
-      archive.destroy(err instanceof Error ? err : new Error(String(err)));
+      const error = err instanceof Error ? err : new Error(String(err));
+      await logError("folder-download-zip", error);
+      archive.destroy(error);
     }
   })();
 

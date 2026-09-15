@@ -30,6 +30,9 @@ export function StudioHeader() {
             <Link href="/studio/site-settings" className="hover:text-neutral-900 dark:hover:text-neutral-100">
               Site settings
             </Link>
+            <Link href="/studio/error-log" className="hover:text-neutral-900 dark:hover:text-neutral-100">
+              Error log
+            </Link>
           </nav>
         ) : null}
       </div>

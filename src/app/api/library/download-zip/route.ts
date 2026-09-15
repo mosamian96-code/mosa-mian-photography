@@ -4,6 +4,7 @@ import { inArray, isNull, and } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets } from "@/lib/db/schema";
+import { logError } from "@/lib/error-log";
 import { requireAdminSession } from "@/lib/require-admin";
 import { getObjectStream } from "@/lib/storage";
 
@@ -47,7 +48,9 @@ export async function GET(req: NextRequest) {
       }
       await archive.finalize();
     } catch (err) {
-      archive.destroy(err instanceof Error ? err : new Error(String(err)));
+      const error = err instanceof Error ? err : new Error(String(err));
+      await logError("library-download-zip", error);
+      archive.destroy(error);
     }
   })();
 

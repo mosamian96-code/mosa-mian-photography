@@ -71,6 +71,13 @@
       "when": 1788041481239,
       "tag": "0009_mighty_molecule_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789508757569,
+      "tag": "0010_secret_mathemanic",
+      "breakpoints": true
     }
   ]
 }
