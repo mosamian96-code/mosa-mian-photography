@@ -28,8 +28,8 @@ PAYLOAD="$(ALERT_TO="$ALERT_TO" SUBJECT="$SUBJECT" BODY="$BODY" python3 -c '
 import json, os
 print(json.dumps({
     # mosamianphotography.com is not a verified sending domain in Resend yet
-    # (confirmed live: sending as that domain 403s) -- using Resend's
-    # always-available sender until resend.com/domains verification is done.
+    # (confirmed live: sending as that domain 403s) -- using the always
+    # available default sender until resend.com/domains verification is done.
     "from": "onboarding@resend.dev",
     "to": os.environ["ALERT_TO"],
     "subject": os.environ["SUBJECT"],
