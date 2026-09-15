@@ -27,7 +27,10 @@ BODY="${2:?usage: alert.sh <subject> <body>}"
 PAYLOAD="$(ALERT_TO="$ALERT_TO" SUBJECT="$SUBJECT" BODY="$BODY" python3 -c '
 import json, os
 print(json.dumps({
-    "from": "alerts@mosamianphotography.com",
+    # mosamianphotography.com is not a verified sending domain in Resend yet
+    # (confirmed live: sending as that domain 403s) -- using Resend's
+    # always-available sender until resend.com/domains verification is done.
+    "from": "onboarding@resend.dev",
     "to": os.environ["ALERT_TO"],
     "subject": os.environ["SUBJECT"],
     "html": "<pre>" + os.environ["BODY"].replace("&", "&amp;").replace("<", "&lt;") + "</pre>",

@@ -8,7 +8,12 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string) {
   // see Dockerfile).
   const resend = new Resend(process.env.RESEND_API_KEY);
   const result = await resend.emails.send({
-    from: "noreply@mosamianphotography.com",
+    // mosamianphotography.com is not yet a verified sending domain in Resend
+    // (confirmed live: sending "from" that address 403s with "domain not
+    // verified"), so this uses Resend's own always-available sender instead.
+    // Once the domain is verified at resend.com/domains, switch this back to
+    // an address like noreply@mosamianphotography.com for proper branding.
+    from: "onboarding@resend.dev",
     to: email,
     subject: "Reset your password",
     html: `
