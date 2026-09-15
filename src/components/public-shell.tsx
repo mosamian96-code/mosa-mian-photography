@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { and, eq } from "drizzle-orm";
-import { CursorRing } from "./cursor-ring";
 import { ScrollProgress } from "./scroll-progress";
 import { db } from "@/lib/db";
 import { derivatives } from "@/lib/db/schema";
@@ -44,7 +43,6 @@ export async function PublicShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <CursorRing />
       <ScrollProgress />
 
       <header className="sticky top-0 z-30 border-b border-white/10 bg-neutral-950/95 backdrop-blur">

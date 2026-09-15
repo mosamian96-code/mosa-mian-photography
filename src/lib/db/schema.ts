@@ -294,7 +294,10 @@ export const galleries = pgTable(
     // photo, the slideshow button, the GPS map) was already unconditional before this
     // column existed -- true preserves every existing gallery's current appearance;
     // showFilenames defaults false because that display didn't exist before at all.
-    showCameraInfo: boolean("show_camera_info").notNull().default(true),
+    // Changed from true 2026-09-16: camera EXIF display was judged distracting on
+    // the public site; existing galleries were bulk-updated to match in the same
+    // migration that changes this default, so no gallery-by-gallery edit was needed.
+    showCameraInfo: boolean("show_camera_info").notNull().default(false),
     showFilenames: boolean("show_filenames").notNull().default(false),
     slideshowEnabled: boolean("slideshow_enabled").notNull().default(true),
     mapEnabled: boolean("map_enabled").notNull().default(true),

@@ -1,0 +1,1 @@
+ALTER TABLE "gallery" ALTER COLUMN "show_camera_info" SET DEFAULT false;

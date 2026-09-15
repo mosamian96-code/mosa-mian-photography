@@ -78,6 +78,13 @@
       "when": 1789508757569,
       "tag": "0010_secret_mathemanic",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789510099552,
+      "tag": "0011_watery_photon",
+      "breakpoints": true
     }
   ]
 }
