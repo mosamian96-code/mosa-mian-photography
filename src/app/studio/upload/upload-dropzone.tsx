@@ -108,6 +108,12 @@ export function UploadDropzone({
   const counts = {
     total: entries.length,
     done: entries.filter((e) => e.status === "duplicate" || e.status === "done").length,
+    // Split out from "done" so re-dropping the same folder (e.g. after an earlier
+    // session where the dialog looked like it had failed) doesn't read as "128
+    // uploaded" when 96 of those were instantly-recognized repeats of the same 32
+    // photos -- confirmed live, the gallery correctly ended up with exactly the 32
+    // distinct photos despite the dialog's total climbing across several drops.
+    duplicates: entries.filter((e) => e.status === "duplicate").length,
     errors: entries.filter((e) => e.status === "error" || e.status === "unsupported").length,
   };
   const inFlight = entries.filter((e) => e.status !== "done" && e.status !== "duplicate");
@@ -199,8 +205,9 @@ export function UploadDropzone({
           onClick={() => setDialogOpen(true)}
           className="mt-2 text-xs text-neutral-500 underline hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
         >
-          {counts.done} / {counts.total} uploaded{counts.errors > 0 ? `, ${counts.errors} need attention` : ""} — view
-          progress
+          {counts.done} / {counts.total} uploaded
+          {counts.duplicates > 0 ? ` (${counts.duplicates} already in library)` : ""}
+          {counts.errors > 0 ? `, ${counts.errors} need attention` : ""} — view progress
         </button>
       ) : null}
 
@@ -269,6 +276,9 @@ export function UploadDropzone({
                   {counts.done}
                   <span className="text-base text-white/40"> / {counts.total}</span>
                 </p>
+                {counts.duplicates > 0 ? (
+                  <p className="mt-1 text-xs text-white/40">{counts.duplicates} already in library</p>
+                ) : null}
                 {counts.errors > 0 ? <p className="mt-1 text-xs text-red-400">{counts.errors} failed</p> : null}
               </div>
             </div>
