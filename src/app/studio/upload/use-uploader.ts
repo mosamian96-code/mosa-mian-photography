@@ -144,7 +144,15 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
           error: "not a recognized photo, video, or sidecar type",
         })),
       ];
-      setEntries(newEntries);
+      // Appended, not replaced: the dialog's own dropzone invites dropping more
+      // files while a batch is still running, but this used to call
+      // setEntries(newEntries) -- wiping out every in-progress entry from the
+      // batch already running. Those files kept uploading successfully in the
+      // background (their own already-launched promises don't care what `entries`
+      // holds), but the dialog looked like the whole upload had vanished, which is
+      // exactly the "dialog disappeared, so I uploaded again" report this fixes --
+      // confirmed live via a gallery that had the same folder uploaded 4 times.
+      setEntries((prev) => [...prev, ...newEntries]);
 
       if (supported.length === 0) return;
 
