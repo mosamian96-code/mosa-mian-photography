@@ -71,11 +71,27 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
   // Ingest happens in the background worker, after uploadFile() already resolved --
   // poll actual asset status so "processing" doesn't just sit there forever once the
   // upload itself is done.
-  useEffect(() => {
-    const pending = entries.filter((e) => e.status === "processing" && e.assetId);
-    if (pending.length === 0) return;
+  //
+  // Self-rescheduling on a plain interval, not "setTimeout, depend on entries so it
+  // reschedules when something changes" (the previous version): that only rescheduled
+  // when a poll actually found something to update via patchEntry. The very next poll
+  // after uploads finish is the most likely one to come back with every asset still
+  // "processing" server-side (this worker only processes 2 at a time -- a normal
+  // batch outlives its own upload phase by minutes), which calls patchEntry for
+  // nothing, so `entries` never changes, so the effect never re-runs, so polling
+  // silently stops forever -- confirmed live: a 32-photo batch stuck at "processing"
+  // with 0/32 done indefinitely, only resuming once more files were dropped in (which
+  // changed `entries` and re-armed the old effect once). entriesRef always holds the
+  // latest entries without being a dependency, so this interval keeps ticking for the
+  // component's whole lifetime regardless of whether any given poll changes anything.
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
 
-    const timer = setTimeout(async () => {
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const pending = entriesRef.current.filter((e) => e.status === "processing" && e.assetId);
+      if (pending.length === 0) return;
+
       const ids = pending.map((e) => e.assetId!).join(",");
       const res = await fetch(`/api/upload/status?ids=${ids}`);
       const { items } = (await res.json()) as {
@@ -96,8 +112,8 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
       }
     }, POLL_INTERVAL_MS);
 
-    return () => clearTimeout(timer);
-  }, [entries, patchEntry]);
+    return () => clearInterval(interval);
+  }, [patchEntry]);
 
   const processOne = useCallback(
     async (entry: Entry, batchId: string) => {
