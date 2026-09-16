@@ -37,10 +37,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .where(and(eq(galleryItems.galleryId, id), isNull(assets.deletedAt)))
     .orderBy(asc(galleryItems.position));
 
-  return NextResponse.json({
-    gallery,
-    items: items.map((i) => ({ ...i, thumbUrl: i.thumbKey ? publicDerivativeUrl(i.thumbKey) : null, thumbKey: undefined })),
-  });
+  return NextResponse.json(
+    {
+      gallery,
+      items: items.map((i) => ({ ...i, thumbUrl: i.thumbKey ? publicDerivativeUrl(i.thumbKey) : null, thumbKey: undefined })),
+    },
+    // The studio editor re-fetches this repeatedly while photos are uploading to
+    // pick up newly-attached items -- an intermediary caching a GET response here
+    // (or the browser itself, absent this header) could show a stale item list well
+    // after the server-side data has already moved on.
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -62,7 +62,14 @@ export default function GalleryEditorPage() {
   const resolveThisGalleryId = useCallback(async () => id, [id]);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/galleries/${id}`);
+    // no-store: this is called repeatedly while photos are uploading/processing to
+    // pick up newly-attached items, and a browser-cached response here means the
+    // grid can keep showing a stale item list even though the server-side data (and
+    // this same request made again later, e.g. by starting a new upload) is
+    // already current -- matching "photos finish processing but don't show up
+    // until I upload again," which just happens to be the next moment this fetch
+    // runs uncached.
+    const res = await fetch(`/api/galleries/${id}`, { cache: "no-store" });
     const data = await res.json();
     setGallery(data.gallery);
     setItems(data.items);
@@ -72,6 +79,20 @@ export default function GalleryEditorPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/id-change; setState happens in load()'s async continuation, not synchronously here.
     load();
   }, [load]);
+
+  // Safety net, independent of UploadDropzone's own onProgress callback: while the
+  // uploader is open, re-fetch this gallery's items every few seconds regardless of
+  // whether onProgress fired. onProgress *should* cover this already, but it's an
+  // extra hop (upload component's internal state -> a callback prop -> this page's
+  // load()) and this page has no way to tell if that chain is actually still
+  // working versus silently not firing for some reason that isn't this page's own
+  // code -- a plain poll here can't have that class of failure, at the cost of
+  // being a few seconds slower than an immediate callback would be.
+  useEffect(() => {
+    if (!uploadOpen) return;
+    const interval = setInterval(load, 4000);
+    return () => clearInterval(interval);
+  }, [uploadOpen, load]);
 
   useEffect(() => {
     fetch("/api/watermarks")
