@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FocusFrame } from "@/components/focus-frame";
+import { JustifiedGrid } from "@/components/justified-grid";
 import { RevealOnView } from "@/components/reveal-on-view";
 import type { FolderSection } from "@/lib/public-site/resolve";
 
@@ -32,44 +33,61 @@ export function FolderSectionGrid({
       ) : null}
 
       {section.galleries.length > 0 ? (
-        <div className={`grid grid-cols-2 gap-1 sm:grid-cols-3 md:grid-cols-4 ${depth > 0 ? "mt-4" : ""}`}>
-          {section.galleries.map((g, i) => (
-            <RevealOnView key={g.id} delayMs={i * 40}>
-              <Link href={`/${[...pathSegments, g.slug].join("/")}`} data-cursor="view" className="group relative block">
-                <div
-                  className="relative overflow-hidden bg-neutral-100 bg-cover bg-center"
-                  style={{
-                    aspectRatio: "4/3",
-                    ...(g.coverLqip ? { backgroundImage: `url(${g.coverLqip})` } : undefined),
-                  }}
-                >
-                  {g.coverUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={g.coverUrl}
-                      alt={g.title}
-                      className={`focus-image h-full w-full object-cover ${g.hoverUrl ? "transition-opacity duration-500 ease-out group-hover:opacity-0" : ""}`}
-                    />
-                  ) : null}
-                  {g.hoverUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={g.hoverUrl}
-                      alt=""
-                      aria-hidden="true"
-                      className="absolute inset-0 h-full w-full scale-105 object-cover opacity-0 transition-opacity duration-500 ease-out group-hover:opacity-100"
-                    />
-                  ) : null}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent" />
-                  <FocusFrame />
-                  <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 px-3 py-2.5">
-                    <GalleryGlyph />
-                    <span className="truncate text-sm text-white">{g.title}</span>
-                  </div>
-                </div>
-              </Link>
-            </RevealOnView>
-          ))}
+        <div className={depth > 0 ? "mt-4" : ""}>
+          {/* Justified, not a fixed-aspect CSS grid: a forced 4/3 box with object-cover
+              was cropping any cover photo that wasn't already 4/3 -- most landscape
+              photography isn't. This lays each row out at its own photos' true aspect
+              ratios (same approach as the in-gallery photo grid), so nothing gets
+              cropped and wide photos naturally render wider/bigger instead of being
+              squeezed into a box sized for a different shape. */}
+          <JustifiedGrid
+            items={section.galleries.map((g) => ({ id: g.id, aspect: g.coverAspect }))}
+            targetRowHeight={320}
+            gap={4}
+            renderItem={(_item, width, height, i) => {
+              const g = section.galleries[i];
+              return (
+                <RevealOnView delayMs={i * 40} className="h-full w-full">
+                  <Link
+                    href={`/${[...pathSegments, g.slug].join("/")}`}
+                    data-cursor="view"
+                    className="group relative block h-full w-full"
+                  >
+                    <div
+                      className="relative h-full w-full overflow-hidden bg-neutral-100 bg-cover bg-center"
+                      style={g.coverLqip ? { backgroundImage: `url(${g.coverLqip})` } : undefined}
+                    >
+                      {g.coverUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={g.coverUrl}
+                          alt={g.title}
+                          width={width}
+                          height={height}
+                          className={`focus-image h-full w-full object-cover ${g.hoverUrl ? "transition-opacity duration-500 ease-out group-hover:opacity-0" : ""}`}
+                        />
+                      ) : null}
+                      {g.hoverUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={g.hoverUrl}
+                          alt=""
+                          aria-hidden="true"
+                          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-0 transition-opacity duration-500 ease-out group-hover:opacity-100"
+                        />
+                      ) : null}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent" />
+                      <FocusFrame />
+                      <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 px-3 py-2.5">
+                        <GalleryGlyph />
+                        <span className="truncate text-sm text-white">{g.title}</span>
+                      </div>
+                    </div>
+                  </Link>
+                </RevealOnView>
+              );
+            }}
+          />
         </div>
       ) : null}
 

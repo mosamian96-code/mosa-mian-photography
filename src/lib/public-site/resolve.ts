@@ -8,7 +8,12 @@ type Gallery = typeof galleries.$inferSelect;
 
 export type FolderSection = {
   folder: Folder;
-  galleries: (Gallery & { coverUrl: string | null; coverLqip: string | null; hoverUrl: string | null })[];
+  galleries: (Gallery & {
+    coverUrl: string | null;
+    coverLqip: string | null;
+    coverAspect: number;
+    hoverUrl: string | null;
+  })[];
   subsections: FolderSection[];
 };
 
@@ -120,7 +125,9 @@ async function loadFolderSection(folder: Folder): Promise<FolderSection> {
         const hoverAssetId = leadItems.find((it) => it.assetId !== coverAssetId)?.assetId;
 
         const [coverAsset, coverDerivative, hoverDerivative] = await Promise.all([
-          coverAssetId ? db.query.assets.findFirst({ where: eq(assets.id, coverAssetId), columns: { lqip: true } }) : null,
+          coverAssetId
+            ? db.query.assets.findFirst({ where: eq(assets.id, coverAssetId), columns: { lqip: true, width: true, height: true } })
+            : null,
           // "1200", not "400": these cover cards render across 1/2 to 1/4 of the page
           // width (folder-section-grid.tsx's 2/3/4-column grid), easily 300-450 CSS
           // px, which needed 600-900px of actual source on any retina display -- the
@@ -142,6 +149,10 @@ async function loadFolderSection(folder: Folder): Promise<FolderSection> {
           ...gallery,
           coverUrl: coverDerivative ? publicDerivativeUrl(coverDerivative.storageKey) : null,
           coverLqip: coverAsset?.lqip ?? null,
+          // Falls back to 3/2 (a common landscape-photo ratio) only when width/height
+          // are missing entirely -- every asset that's finished processing has them,
+          // this just avoids a divide-by-zero for the rare not-yet-ready cover.
+          coverAspect: coverAsset?.width && coverAsset?.height ? coverAsset.width / coverAsset.height : 1.5,
           hoverUrl: hoverDerivative ? publicDerivativeUrl(hoverDerivative.storageKey) : null,
         };
       }),

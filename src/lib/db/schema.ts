@@ -113,7 +113,12 @@ export const assets = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    sha256: text("sha256").notNull().unique(),
+    // No longer .unique() as of the "keep duplicates" upload option: a visitor can
+    // intentionally create a second library entry for content that's already
+    // present, sharing the same storage key (content-addressed, so no bytes are
+    // re-uploaded) but as its own independent, organizable asset row. Dedup lookups
+    // (src/app/api/upload/check) still need this indexed even without uniqueness.
+    sha256: text("sha256").notNull(),
     originalFilename: text("original_filename").notNull(),
     // Filename without directory or extension, computed at insert time — indexed so
     // the ingest worker can find RAW+JPEG+XMP siblings (same batch, same basename)
@@ -141,6 +146,7 @@ export const assets = pgTable(
     index("asset_captured_at_idx").on(t.capturedAt),
     index("asset_group_id_idx").on(t.groupId),
     index("asset_batch_basename_idx").on(t.batchId, t.basename),
+    index("asset_sha256_idx").on(t.sha256),
   ],
 );
 
