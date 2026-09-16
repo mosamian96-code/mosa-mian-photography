@@ -1,8 +1,18 @@
+"use client";
+
 import Link from "next/link";
 import { FocusFrame } from "@/components/focus-frame";
 import { JustifiedGrid } from "@/components/justified-grid";
 import { RevealOnView } from "@/components/reveal-on-view";
 import type { FolderSection } from "@/lib/public-site/resolve";
+
+// Client component (not the server component it was before JustifiedGrid was added
+// here) solely because JustifiedGrid takes a renderItem function prop -- Server
+// Components can't pass functions across to a Client Component (confirmed live:
+// "Functions cannot be passed directly to Client Components" crashed every folder
+// and homepage request right after deploy). This component does no data fetching of
+// its own -- section is already-resolved data passed in as a prop -- so becoming a
+// client component costs a bit of extra client JS, not a broken data-fetching model.
 
 /** Renders a folder's own galleries as a cover-photo grid, then recurses into each
  * subfolder as its own titled section below -- mirrors SmugMug's folder-page layout
