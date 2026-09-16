@@ -30,7 +30,19 @@ export type Entry = {
   progress: number;
   assetId?: string;
   error?: string;
+  /** Per-file destination, set when this entry came from an auto-organized folder
+   * drop (organize-drop.ts) -- takes priority over resolveGalleryId's single shared
+   * target. undefined (not set) falls back to resolveGalleryId/galleryIdRef; an
+   * explicit null means "Library only, don't fall back" (an organized drop's loose
+   * files with no folder of their own to imply a gallery). */
+  targetGalleryId?: string | null;
 };
+
+/** What runBatch actually takes: a file plus where it goes. galleryId omitted means
+ * "use whatever resolveGalleryId resolves for this whole batch" (every existing
+ * caller); set it explicitly to route an individual file elsewhere, which is how an
+ * organized folder drop sends different files to different galleries in one batch. */
+export type FileToUpload = { file: File; galleryId?: string | null };
 
 const CONCURRENCY = 3;
 const POLL_INTERVAL_MS = 2000;
@@ -73,7 +85,7 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
         const entry = pending.find((e) => e.assetId === item.id);
         if (!entry) continue;
         if (item.status === "ready") {
-          const galleryId = galleryIdRef.current;
+          const galleryId = entry.targetGalleryId !== undefined ? entry.targetGalleryId : galleryIdRef.current;
           if (galleryId && isAttachEligible(item.groupId, item.isGroupPrimary)) {
             await addToGallery(galleryId, item.id).catch(() => {});
           }
@@ -93,9 +105,11 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
         patchEntry(entry.id, { status: "hashing" });
         const sha256 = await hashFile(entry.file);
 
+        const targetGalleryId = entry.targetGalleryId !== undefined ? entry.targetGalleryId : galleryIdRef.current;
+
         const check = await checkDuplicate(sha256, batchId, duplicateMode);
         if (check.exists && !check.keep) {
-          const galleryId = galleryIdRef.current;
+          const galleryId = targetGalleryId;
           if (galleryId && check.assetId && isAttachEligible(check.groupId, check.isGroupPrimary)) {
             await addToGallery(galleryId, check.assetId).catch(() => {});
           }
@@ -130,15 +144,21 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
   );
 
   const runBatch = useCallback(
-    async (files: File[]) => {
-      const supported = files.filter((f) => classifyKind(f.name) !== null);
-      const unsupported = files.filter((f) => classifyKind(f.name) === null);
+    async (files: FileToUpload[]) => {
+      const supported = files.filter((f) => classifyKind(f.file.name) !== null);
+      const unsupported = files.filter((f) => classifyKind(f.file.name) === null);
 
       const newEntries: Entry[] = [
-        ...supported.map((file) => ({ id: crypto.randomUUID(), file, status: "queued" as const, progress: 0 })),
-        ...unsupported.map((file) => ({
+        ...supported.map((f) => ({
           id: crypto.randomUUID(),
-          file,
+          file: f.file,
+          status: "queued" as const,
+          progress: 0,
+          targetGalleryId: f.galleryId,
+        })),
+        ...unsupported.map((f) => ({
+          id: crypto.randomUUID(),
+          file: f.file,
           status: "unsupported" as const,
           progress: 0,
           error: "not a recognized photo, video, or sidecar type",

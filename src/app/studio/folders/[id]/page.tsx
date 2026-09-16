@@ -195,12 +195,14 @@ export default function FolderDetailPage() {
           </button>
         </form>
         <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
-          Or type a title above and drop photos below — this creates the gallery and uploads
-          straight into it in one step.
+          Drop a named folder below to create a matching gallery automatically (a folder full of
+          subfolders creates one gallery per subfolder) — or type a title above first and drop loose
+          photos to create just the one gallery.
         </p>
         <div className="mt-2">
           <UploadDropzone
             compact
+            baseFolderId={id}
             resolveGalleryId={resolveNewGalleryId}
             onProgress={load}
             contextTitle={newGalleryTitle.trim() || undefined}

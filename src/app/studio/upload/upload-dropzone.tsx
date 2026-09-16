@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { readDroppedFiles } from "./read-dropped-files";
+import { organizeDroppedFiles } from "./organize-drop";
+import { filesWithPathFromFileList, readDroppedFiles, type FileWithPath } from "./read-dropped-files";
 import type { DuplicateMode } from "./upload-lib";
-import { useUploader } from "./use-uploader";
+import { type FileToUpload, useUploader } from "./use-uploader";
 
 /** Drag-and-drop uploader, reused both by the standalone /studio/upload page (no
  * `resolveGalleryId` -> lands in the Library only, same as before) and inline on a
@@ -16,12 +17,21 @@ import { useUploader } from "./use-uploader";
  * "view progress" link reopens it. */
 export function UploadDropzone({
   resolveGalleryId,
+  baseFolderId,
   onProgress,
   onStart,
   compact = false,
   contextTitle,
 }: {
   resolveGalleryId?: () => Promise<string | null>;
+  /** Enables drag-a-whole-folder-structure organizing: when set, dropping a folder
+   * (not loose files) creates/reuses a gallery named after each dragged subfolder
+   * directly under this folder id -- "Wedding/*.jpg" becomes a gallery "Wedding"
+   * here; "2026/Wedding/*.jpg" becomes a folder "2026" here with a "Wedding" gallery
+   * inside it. See organize-drop.ts. A drop with no folder structure (loose files
+   * picked or dragged individually) falls back to resolveGalleryId as usual --
+   * there's no folder name to derive a gallery from in that case. */
+  baseFolderId?: string;
   /** Fires once per newly-finished entry (done or duplicate) -- lets the host page
    * refresh its own item list as photos land, without polling on its own. */
   onProgress?: () => void;
@@ -41,6 +51,7 @@ export function UploadDropzone({
   const { entries, runBatch } = useUploader(resolveGalleryId, duplicateMode);
   const [isDragging, setIsDragging] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [organizedInto, setOrganizedInto] = useState<string[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settledCountRef = useRef(0);
   // Locked once a batch actually starts -- runBatch already captured whatever
@@ -57,19 +68,39 @@ export function UploadDropzone({
     }
   }, [entries, onProgress]);
 
+  // If baseFolderId is set and the drop actually contains folder structure (a
+  // relativePath with a "/" in it -- i.e. it came from a dragged/picked folder, not
+  // individually-selected files), auto-create/reuse a gallery per dragged subfolder
+  // and route each file there instead of everything going to one resolveGalleryId
+  // target. Loose files with no folder of their own still fall back to
+  // resolveGalleryId, same as when baseFolderId isn't set at all.
+  async function resolveFilesToUpload(withPaths: FileWithPath[]): Promise<FileToUpload[]> {
+    if (!baseFolderId || !withPaths.some((f) => f.relativePath.includes("/"))) {
+      return withPaths.map((f) => ({ file: f.file }));
+    }
+    const { targeted, untargeted } = await organizeDroppedFiles(withPaths, baseFolderId);
+    setOrganizedInto([...new Set(targeted.map((t) => t.galleryTitle))]);
+    return [
+      ...targeted.map((t) => ({ file: t.file, galleryId: t.galleryId })),
+      ...untargeted.map((file) => ({ file })),
+    ];
+  }
+
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setIsDragging(false);
     setDialogOpen(true);
     onStart?.();
-    readDroppedFiles(e.dataTransfer).then(runBatch);
+    readDroppedFiles(e.dataTransfer)
+      .then(resolveFilesToUpload)
+      .then(runBatch);
   }
 
   function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files) {
       setDialogOpen(true);
       onStart?.();
-      runBatch(Array.from(e.target.files));
+      resolveFilesToUpload(filesWithPathFromFileList(Array.from(e.target.files))).then(runBatch);
     }
     e.target.value = "";
   }
@@ -133,7 +164,13 @@ export function UploadDropzone({
         }`}
       >
         <p className={`text-neutral-600 dark:text-neutral-400 ${compact ? "text-xs" : "text-sm"}`}>
-          {compact ? "Drop photos here" : "Drop a folder here"}
+          {baseFolderId
+            ? compact
+              ? "Drop photos or folders here"
+              : "Drop a folder here — each subfolder becomes its own gallery"
+            : compact
+              ? "Drop photos here"
+              : "Drop a folder here"}
         </p>
         {!compact ? <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">or</p> : null}
         <button
@@ -177,9 +214,16 @@ export function UploadDropzone({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <h2 className="truncate text-base font-medium">
-                Upload photos{contextTitle ? <> to &ldquo;{contextTitle}&rdquo;</> : null}
-              </h2>
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-medium">
+                  Upload photos{contextTitle ? <> to &ldquo;{contextTitle}&rdquo;</> : null}
+                </h2>
+                {organizedInto && organizedInto.length > 0 ? (
+                  <p className="truncate text-xs text-white/50">
+                    Organized into: {organizedInto.join(", ")}
+                  </p>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={() => setDialogOpen(false)}
