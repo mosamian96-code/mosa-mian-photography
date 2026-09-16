@@ -193,23 +193,46 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
       if (supported.length === 0) return;
 
       setRunning(true);
-      try {
-        galleryIdRef.current = resolveGalleryId ? await resolveGalleryId() : null;
-      } catch (err) {
-        setEntries((prev) =>
-          prev.map((e) =>
-            e.status === "queued"
-              ? { ...e, status: "error", error: err instanceof Error ? err.message : "failed to resolve destination" }
-              : e,
-          ),
-        );
-        setRunning(false);
-        return;
+      // Only needed if at least one file in *this* batch has no per-file
+      // targetGalleryId of its own -- a fully organized folder drop (every file
+      // routed to its own gallery via organize-drop.ts) has nothing for
+      // resolveGalleryId to do. Calling it unconditionally used to mean a batch
+      // that was entirely per-file-targeted still failed outright whenever
+      // resolveGalleryId itself required something that wasn't there (e.g. the
+      // folder page's "type a title first" fallback, which throws on an empty
+      // title) -- confirmed live: an organized drop where every file already had
+      // its own destination still errored with "type a gallery title above" before
+      // a single file was processed, because this ran regardless.
+      const needsSharedGalleryId = supported.some((f) => f.galleryId === undefined);
+      // Ids to leave out of the queue below -- can't rely on newEntries' own status
+      // field for this (it's a plain snapshot array from the map() calls above, not
+      // connected to the setEntries call that marks them "error"), so track it
+      // separately instead of the `return`-the-whole-batch this replaced.
+      const resolveFailedIds = new Set<string>();
+      if (needsSharedGalleryId) {
+        try {
+          galleryIdRef.current = resolveGalleryId ? await resolveGalleryId() : null;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "failed to resolve destination";
+          for (const e of newEntries) {
+            if (e.status === "queued" && e.targetGalleryId === undefined) resolveFailedIds.add(e.id);
+          }
+          setEntries((prev) =>
+            prev.map((e) => (resolveFailedIds.has(e.id) ? { ...e, status: "error", error: message } : e)),
+          );
+          // Per-file-targeted entries (an organized folder drop's own galleries)
+          // are unaffected and still get processed below -- only entries that
+          // actually needed the shared resolver are cut from the queue.
+        }
       }
 
       const { batchId } = await createBatch(supported.length);
 
-      const queue = newEntries.filter((e) => e.status === "queued");
+      const queue = newEntries.filter((e) => e.status === "queued" && !resolveFailedIds.has(e.id));
+      if (queue.length === 0) {
+        setRunning(false);
+        return;
+      }
       let next = 0;
       async function worker() {
         for (;;) {
