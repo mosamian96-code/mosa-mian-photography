@@ -1,10 +1,28 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { FocusFrame } from "@/components/focus-frame";
 import { JustifiedGrid } from "@/components/justified-grid";
 import { RevealOnView } from "@/components/reveal-on-view";
 import type { FolderSection } from "@/lib/public-site/resolve";
+
+// Same small/medium/large row-height pattern as the in-gallery photo grid
+// (gallery-view.tsx) -- a distinct localStorage key since "how big should folder
+// tiles be" and "how big should photos inside a gallery be" are different per-visitor
+// preferences, not one shared setting. 320 (medium) matches this grid's prior fixed
+// row height, so switching to it is a visual no-op.
+const SIZE_OPTIONS = [
+  { key: "small", label: "S", rowHeight: 200 },
+  { key: "medium", label: "M", rowHeight: 320 },
+  { key: "large", label: "L", rowHeight: 480 },
+] as const;
+type GridSize = (typeof SIZE_OPTIONS)[number]["key"];
+const GRID_SIZE_STORAGE_KEY = "mm-folder-grid-size";
+
+function isGridSize(value: string | null): value is GridSize {
+  return value === "small" || value === "medium" || value === "large";
+}
 
 // Client component (not the server component it was before JustifiedGrid was added
 // here) solely because JustifiedGrid takes a renderItem function prop -- Server
@@ -24,11 +42,35 @@ export function FolderSectionGrid({
   section,
   pathSegments,
   depth,
+  rowHeight,
 }: {
   section: FolderSection;
   pathSegments: string[];
   depth: number;
+  /** Only meant to be passed by this component's own recursive calls to itself --
+   * the top-level call (depth 0, no rowHeight given) owns the size toggle and
+   * preference, and threads the chosen height down through every nested subsection
+   * so the whole tree resizes together, not just whichever section you happened to
+   * be looking at. */
+  rowHeight?: number;
 }) {
+  const [gridSize, setGridSize] = useState<GridSize>("medium");
+  const isRoot = rowHeight === undefined;
+
+  useEffect(() => {
+    if (!isRoot) return;
+    const stored = localStorage.getItem(GRID_SIZE_STORAGE_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isGridSize(stored)) setGridSize(stored);
+  }, [isRoot]);
+
+  const changeGridSize = useCallback((size: GridSize) => {
+    setGridSize(size);
+    localStorage.setItem(GRID_SIZE_STORAGE_KEY, size);
+  }, []);
+
+  const resolvedRowHeight = rowHeight ?? SIZE_OPTIONS.find((o) => o.key === gridSize)!.rowHeight;
+
   return (
     <div className={depth > 0 ? "mt-12" : "mt-8"}>
       {depth > 0 ? (
@@ -42,6 +84,27 @@ export function FolderSectionGrid({
         </Link>
       ) : null}
 
+      {isRoot ? (
+        <div className="mb-3 flex items-center justify-end gap-2">
+          <div role="group" aria-label="Tile size" className="inline-flex rounded border border-neutral-200 bg-white p-0.5">
+            {SIZE_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                aria-pressed={gridSize === opt.key}
+                onClick={() => changeGridSize(opt.key)}
+                title={`${opt.key[0].toUpperCase()}${opt.key.slice(1)} tiles`}
+                className={`h-7 w-7 rounded text-xs tracking-wide transition-colors ${
+                  gridSize === opt.key ? "bg-neutral-900 text-white" : "text-neutral-500 hover:text-neutral-900"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {section.galleries.length > 0 ? (
         <div className={depth > 0 ? "mt-4" : ""}>
           {/* Justified, not a fixed-aspect CSS grid: a forced 4/3 box with object-cover
@@ -52,7 +115,7 @@ export function FolderSectionGrid({
               squeezed into a box sized for a different shape. */}
           <JustifiedGrid
             items={section.galleries.map((g) => ({ id: g.id, aspect: g.coverAspect }))}
-            targetRowHeight={320}
+            targetRowHeight={resolvedRowHeight}
             gap={4}
             renderItem={(_item, width, height, i) => {
               const g = section.galleries[i];
@@ -107,6 +170,7 @@ export function FolderSectionGrid({
           section={sub}
           pathSegments={[...pathSegments, sub.folder.slug]}
           depth={depth + 1}
+          rowHeight={resolvedRowHeight}
         />
       ))}
     </div>
