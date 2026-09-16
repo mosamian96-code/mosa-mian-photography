@@ -141,10 +141,14 @@ export default function GalleryEditorPage() {
   }
 
   function downloadGalleryZip() {
-    if (items.length === 0) return;
+    if (items.length === 0 || !gallery) return;
     if (!window.confirm(`Download all ${items.length} photos in this gallery as a zip?`)) return;
-    const ids = items.map((i) => i.assetId).join(",");
-    window.location.href = `/api/library/download-zip?ids=${ids}&name=${gallery?.slug ?? "gallery"}`;
+    // galleryId, not a joined list of every item's id -- confirmed live that an
+    // ~8KB URL (a ~215-item gallery's ids, comma-joined) got the raw connection
+    // refused outright before the request reached the app at all. The server
+    // resolves gallery items itself now, same as the public download route already
+    // did, so this URL stays small regardless of how many photos are in it.
+    window.location.href = `/api/library/download-zip?galleryId=${gallery.id}&name=${gallery.slug}`;
   }
 
   async function deleteGallery() {
