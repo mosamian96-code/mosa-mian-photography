@@ -24,16 +24,20 @@ async function api<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+export type DuplicateMode = "skip" | "keep";
+
 export type CheckResult = {
   exists: boolean;
+  keep?: boolean;
   assetId?: string;
   status?: string;
   groupId?: string | null;
   isGroupPrimary?: boolean;
+  storageKey?: string;
 };
 
-export function checkDuplicate(sha256: string, batchId: string) {
-  return api<CheckResult>("/api/upload/check", { sha256, batchId });
+export function checkDuplicate(sha256: string, batchId: string, mode: DuplicateMode = "skip") {
+  return api<CheckResult>("/api/upload/check", { sha256, batchId, mode });
 }
 
 export function createBatch(totalFiles: number) {
@@ -131,5 +135,26 @@ export async function uploadFile(
     size: file.size,
     mime: file.type || "application/octet-stream",
     batchId,
+  });
+}
+
+/** "Keep duplicates" path: the file's bytes are already in storage under
+ * existingStorageKey (checkDuplicate's "keep" response) -- content-addressed, so
+ * there's genuinely nothing new to upload -- this only creates the second,
+ * independent asset row via forceNewCopy. */
+export function completeDuplicate(
+  existingStorageKey: string,
+  sha256: string,
+  file: File,
+  batchId: string,
+): Promise<UploadOutcome> {
+  return api<UploadOutcome>("/api/upload/complete", {
+    storageKey: existingStorageKey,
+    sha256,
+    filename: file.name,
+    size: file.size,
+    mime: file.type || "application/octet-stream",
+    batchId,
+    forceNewCopy: true,
   });
 }

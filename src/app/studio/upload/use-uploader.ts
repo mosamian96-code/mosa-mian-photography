@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { classifyKind } from "@/lib/ingest/classify";
-import { addToGallery, checkDuplicate, createBatch, hashFile, isAttachEligible, uploadFile } from "./upload-lib";
+import {
+  addToGallery,
+  checkDuplicate,
+  completeDuplicate,
+  createBatch,
+  type DuplicateMode,
+  hashFile,
+  isAttachEligible,
+  uploadFile,
+} from "./upload-lib";
 
 export type EntryStatus =
   | "queued"
@@ -33,8 +42,12 @@ const POLL_INTERVAL_MS = 2000;
  * @param resolveGalleryId Called once per batch, before any file is processed. A
  * returned gallery id auto-attaches every uploaded/duplicate asset to it as soon as
  * it's known to be attach-eligible (see isAttachEligible); returning/omitting null
- * leaves assets in the Library only. */
-export function useUploader(resolveGalleryId?: () => Promise<string | null>) {
+ * leaves assets in the Library only.
+ * @param duplicateMode "skip" (default) leaves an existing match alone, same as
+ * always. "keep" creates a second, independent library entry for it instead --
+ * bytes are never re-uploaded either way (sha256 already identifies them), this only
+ * changes whether a new asset row (and gallery attachment) is created for the match. */
+export function useUploader(resolveGalleryId?: () => Promise<string | null>, duplicateMode: DuplicateMode = "skip") {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [running, setRunning] = useState(false);
   const galleryIdRef = useRef<string | null>(null);
@@ -80,13 +93,27 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>) {
         patchEntry(entry.id, { status: "hashing" });
         const sha256 = await hashFile(entry.file);
 
-        const check = await checkDuplicate(sha256, batchId);
-        if (check.exists) {
+        const check = await checkDuplicate(sha256, batchId, duplicateMode);
+        if (check.exists && !check.keep) {
           const galleryId = galleryIdRef.current;
           if (galleryId && check.assetId && isAttachEligible(check.groupId, check.isGroupPrimary)) {
             await addToGallery(galleryId, check.assetId).catch(() => {});
           }
           patchEntry(entry.id, { status: "duplicate", progress: 1, assetId: check.assetId });
+          return;
+        }
+
+        if (check.exists && check.keep) {
+          // "Keep duplicates": bytes are already in storage under check.storageKey
+          // (content-addressed -- this is genuinely the same file), so there's
+          // nothing to upload, only a new, independent asset row to create. That row
+          // starts at "pending" like any fresh upload and goes through the same
+          // ingest pipeline (its own group/gallery-attach happens via the polling
+          // effect above once it reaches "ready") -- check.groupId/isGroupPrimary
+          // describe the *original* asset, not this new one, so they don't apply here.
+          patchEntry(entry.id, { status: "processing", progress: 1 });
+          const outcome = await completeDuplicate(check.storageKey!, sha256, entry.file, batchId);
+          patchEntry(entry.id, { status: "processing", progress: 1, assetId: outcome.assetId });
           return;
         }
 

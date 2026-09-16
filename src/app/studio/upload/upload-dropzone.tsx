@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { readDroppedFiles } from "./read-dropped-files";
+import type { DuplicateMode } from "./upload-lib";
 import { useUploader } from "./use-uploader";
 
 /** Drag-and-drop uploader, reused both by the standalone /studio/upload page (no
@@ -28,11 +29,17 @@ export function UploadDropzone({
    * untargeted upload (the standalone Upload page). */
   contextTitle?: string;
 }) {
-  const { entries, runBatch } = useUploader(resolveGalleryId);
+  const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>("skip");
+  const { entries, runBatch } = useUploader(resolveGalleryId, duplicateMode);
   const [isDragging, setIsDragging] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settledCountRef = useRef(0);
+  // Locked once a batch actually starts -- runBatch already captured whatever
+  // duplicateMode was current at that moment (useUploader's hook argument), so
+  // changing the toggle mid-upload would silently do nothing for files already
+  // queued while implying otherwise.
+  const modeLocked = entries.length > 0;
 
   useEffect(() => {
     const settled = entries.filter((e) => e.status === "done" || e.status === "duplicate").length;
@@ -67,6 +74,39 @@ export function UploadDropzone({
 
   return (
     <div>
+      <div className={`flex items-center gap-2 ${compact ? "mb-1.5" : "mb-2"}`}>
+        <span className={`text-neutral-500 dark:text-neutral-400 ${compact ? "text-[11px]" : "text-xs"}`}>
+          If a photo is already in the library:
+        </span>
+        <div
+          role="group"
+          aria-label="Duplicate handling"
+          className="inline-flex rounded border border-neutral-300 dark:border-neutral-700"
+        >
+          {(
+            [
+              { key: "skip", label: "Skip it" },
+              { key: "keep", label: "Add as new copy" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              disabled={modeLocked}
+              aria-pressed={duplicateMode === opt.key}
+              onClick={() => setDuplicateMode(opt.key)}
+              className={`px-2 py-1 text-xs transition-colors first:rounded-l last:rounded-l-none last:border-l disabled:cursor-not-allowed disabled:opacity-50 ${
+                duplicateMode === opt.key
+                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                  : "text-neutral-600 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-900"
+              } border-neutral-300 dark:border-neutral-700`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div
         onDragOver={(e) => {
           e.preventDefault();
