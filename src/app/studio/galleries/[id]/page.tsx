@@ -235,6 +235,17 @@ export default function GalleryEditorPage() {
                   <span className="text-xs text-neutral-400 dark:text-neutral-500">{bulkSelected.size} selected</span>
                   <button
                     type="button"
+                    onClick={() =>
+                      setBulkSelected((prev) =>
+                        prev.size === items.length ? new Set() : new Set(items.map((i) => i.assetId)),
+                      )
+                    }
+                    className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                  >
+                    {bulkSelected.size === items.length ? "Deselect all" : "Select all"}
+                  </button>
+                  <button
+                    type="button"
                     onClick={bulkDownload}
                     disabled={bulkSelected.size === 0}
                     className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:hover:bg-neutral-900"
