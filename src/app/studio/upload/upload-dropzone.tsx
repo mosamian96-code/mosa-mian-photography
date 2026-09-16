@@ -17,6 +17,7 @@ import { useUploader } from "./use-uploader";
 export function UploadDropzone({
   resolveGalleryId,
   onProgress,
+  onStart,
   compact = false,
   contextTitle,
 }: {
@@ -24,6 +25,13 @@ export function UploadDropzone({
   /** Fires once per newly-finished entry (done or duplicate) -- lets the host page
    * refresh its own item list as photos land, without polling on its own. */
   onProgress?: () => void;
+  /** Fires synchronously the moment a batch is handed off (drop or file picker),
+   * before any upload work happens -- for a host page that conditionally
+   * mounts/unmounts this component based on state onProgress's refresh can change
+   * (e.g. "show the big empty-state dropzone only while the gallery has 0 items"),
+   * so it can flip that state up front and stay mounted through the transition
+   * instead of unmounting this mid-upload once the first item lands. */
+  onStart?: () => void;
   compact?: boolean;
   /** Named in the dialog header ("Upload photos to '<contextTitle>'"). Omit for an
    * untargeted upload (the standalone Upload page). */
@@ -53,12 +61,14 @@ export function UploadDropzone({
     e.preventDefault();
     setIsDragging(false);
     setDialogOpen(true);
+    onStart?.();
     readDroppedFiles(e.dataTransfer).then(runBatch);
   }
 
   function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files) {
       setDialogOpen(true);
+      onStart?.();
       runBatch(Array.from(e.target.files));
     }
     e.target.value = "";

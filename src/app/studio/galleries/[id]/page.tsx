@@ -54,6 +54,10 @@ export default function GalleryEditorPage() {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [deletingGallery, setDeletingGallery] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  // Fires the moment a batch actually starts (not on first settle) so the dropzone
+  // stays mounted through the empty->has-items transition -- see the render-time
+  // comment by UploadDropzone below for why that transition used to unmount it.
+  const markUploadStarted = useCallback(() => setUploadOpen(true), []);
 
   const resolveThisGalleryId = useCallback(async () => id, [id]);
 
@@ -314,25 +318,39 @@ export default function GalleryEditorPage() {
               This gallery is empty. Drag RAW, JPEG, HEIC, or .xmp files here, or choose them from
               your computer — each one attaches to this gallery as soon as it finishes uploading.
             </p>
-            <div className="mt-5 w-full max-w-md">
-              <UploadDropzone resolveGalleryId={resolveThisGalleryId} onProgress={load} contextTitle={gallery.title} />
-            </div>
           </div>
         ) : (
-          <>
-            <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
-              {bulkMode
-                ? "Click photos to select them."
-                : "Click a photo to see its details. Hover to set cover. Drag to reorder — switches Sort to \"Manual\" automatically."}
-              {reordering ? " Saving order…" : null}
-            </p>
-            {uploadOpen ? (
-              <div className="mt-3">
-                <UploadDropzone compact resolveGalleryId={resolveThisGalleryId} onProgress={load} contextTitle={gallery.title} />
-              </div>
-            ) : null}
-          </>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+            {bulkMode
+              ? "Click photos to select them."
+              : "Click a photo to see its details. Hover to set cover. Drag to reorder — switches Sort to \"Manual\" automatically."}
+            {reordering ? " Saving order…" : null}
+          </p>
         )}
+
+        {/* One persistent UploadDropzone at a stable position, not split into two
+            separate call sites gated by items.length -- the first photo to finish
+            uploading calls onProgress -> load() -> setItems(...), which used to flip
+            items.length from 0 to 1 mid-upload and switch to the *other* branch's
+            UploadDropzone. React sees that as removing one component and mounting a
+            different one, not updating props, so the whole dialog (and every
+            still-in-flight file's progress) vanished right as the first photo
+            landed -- confirmed live, matches "2 or 3 upload, then it disappears"
+            (concurrency is 3, so that's roughly when the first one settles).
+            markUploadStarted flips uploadOpen true up front so this stays mounted
+            through that transition instead of depending on a click that already
+            happened before the transition occurs. */}
+        {items.length === 0 || uploadOpen ? (
+          <div className={items.length === 0 ? "mt-5 w-full max-w-md" : "mt-3"}>
+            <UploadDropzone
+              compact={items.length > 0}
+              resolveGalleryId={resolveThisGalleryId}
+              onProgress={load}
+              onStart={markUploadStarted}
+              contextTitle={gallery.title}
+            />
+          </div>
+        ) : null}
         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
           {items.map((item, index) => {
             const isCover = gallery.coverAssetId === item.assetId;
