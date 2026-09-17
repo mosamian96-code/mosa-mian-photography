@@ -59,6 +59,21 @@ export default function GalleryEditorPage() {
   // comment by UploadDropzone below for why that transition used to unmount it.
   const markUploadStarted = useCallback(() => setUploadOpen(true), []);
 
+  // UploadDropzone only mounts (and so only runs its own auto-resume sweep for
+  // interrupted uploads -- see use-uploader.ts) once items.length === 0 || uploadOpen
+  // below -- a gallery that already has photos wouldn't otherwise mount it at all
+  // until the visitor manually clicks "Upload," so an interrupted video upload from
+  // a previous visit would just sit unresumed in IndexedDB indefinitely. Checking
+  // here and flipping uploadOpen on is what makes resumption actually automatic on
+  // this page instead of depending on the visitor happening to reopen the uploader.
+  useEffect(() => {
+    import("@/app/studio/upload/pending-uploads-db").then(({ listPendingUploads }) => {
+      listPendingUploads().then((pending) => {
+        if (pending.length > 0) setUploadOpen(true);
+      });
+    });
+  }, []);
+
   const resolveThisGalleryId = useCallback(async () => id, [id]);
 
   const load = useCallback(async () => {

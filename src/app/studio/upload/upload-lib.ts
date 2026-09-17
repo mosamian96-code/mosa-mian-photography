@@ -1,3 +1,5 @@
+import { deletePendingUpload, getPendingUpload, savePendingUpload, updatePendingUploadParts } from "./pending-uploads-db";
+
 // SHA-256 via SubtleCrypto rather than a dedicated Web Worker: SubtleCrypto's digest
 // already runs off the main JS thread and returns a Promise, so the UI doesn't freeze
 // while it works — the brief's "computed in a Web Worker" (section 6) is really after
@@ -130,24 +132,36 @@ const PART_CONCURRENCY = 4;
 
 async function uploadMultipart(
   file: File,
+  sha256: string,
   storageKey: string,
   uploadId: string,
   partSize: number,
   totalParts: number,
+  alreadyCompleted: { partNumber: number; etag: string }[],
   onProgress?: (loaded: number) => void,
 ) {
-  const parts: { partNumber: number; etag: string }[] = [];
+  const parts: { partNumber: number; etag: string }[] = [...alreadyCompleted];
+  const doneNumbers = new Set(alreadyCompleted.map((p) => p.partNumber));
   let nextPart = 1;
   // Bytes actually sent so far, per part number -- up to PART_CONCURRENCY parts are
   // in flight at once, each reporting its own progress independently, so the
   // caller needs the *sum* across all of them, not any single part's fraction.
-  const loadedByPart = new Map<number, number>();
+  // Resumed parts count as fully sent from the start, so a resume's progress bar
+  // (and the batch-wide ETA that reads from it) reflects what's actually already
+  // uploaded instead of restarting the percentage from zero.
+  const loadedByPart = new Map<number, number>(alreadyCompleted.map((p) => [p.partNumber, partSize]));
   const reportTotal = () => onProgress?.([...loadedByPart.values()].reduce((a, b) => a + b, 0));
+  reportTotal();
+
+  async function persistProgress() {
+    await updatePendingUploadParts(sha256, parts);
+  }
 
   async function worker() {
     for (;;) {
       const partNumber = nextPart++;
       if (partNumber > totalParts) return;
+      if (doneNumbers.has(partNumber)) continue;
 
       const start = (partNumber - 1) * partSize;
       const blob = file.slice(start, Math.min(start + partSize, file.size));
@@ -170,6 +184,7 @@ async function uploadMultipart(
       });
 
       parts.push({ partNumber, etag });
+      await persistProgress();
     }
   }
 
@@ -183,31 +198,87 @@ export async function uploadFile(
   file: File,
   sha256: string,
   batchId: string,
+  galleryId: string | null,
   onProgress?: (fraction: number) => void,
 ): Promise<UploadOutcome> {
-  const plan = await initUpload(sha256, file.name, file.size, file.type || "application/octet-stream");
+  const mime = file.type || "application/octet-stream";
+
+  // Resume, not restart: a matching pending-uploads-db record means this exact
+  // content (sha256-identified) already has a multipart upload in progress on B2 --
+  // could be this same tab picking back up after the OS suspended it, a reload, or
+  // the visitor re-dropping the same file after closing the browser entirely and
+  // coming back. Either way, the storageKey/uploadId are already real and B2 still
+  // has whichever parts finished before, so there's nothing to gain from calling
+  // /api/upload/init again -- that would only mint a second, abandoned multipart
+  // upload on B2 alongside the one already in progress.
+  const pending = await getPendingUpload(sha256);
+  if (pending && pending.size === file.size) {
+    const parts = await uploadMultipart(
+      file,
+      sha256,
+      pending.storageKey,
+      pending.uploadId,
+      pending.partSize,
+      pending.totalParts,
+      pending.completedParts,
+      (loaded) => onProgress?.(loaded / file.size),
+    );
+    const outcome = await api<UploadOutcome>("/api/upload/complete", {
+      storageKey: pending.storageKey,
+      uploadId: pending.uploadId,
+      parts,
+      sha256,
+      filename: file.name,
+      size: file.size,
+      mime,
+      batchId,
+    });
+    await deletePendingUpload(sha256);
+    return outcome;
+  }
+
+  const plan = await initUpload(sha256, file.name, file.size, mime);
 
   let parts: { partNumber: number; etag: string }[] | undefined;
   if (plan.mode === "single") {
-    await uploadSingle(file, plan.uploadUrl, file.type || "application/octet-stream", (loaded) =>
-      onProgress?.(loaded / file.size),
-    );
+    await uploadSingle(file, plan.uploadUrl, mime, (loaded) => onProgress?.(loaded / file.size));
   } else {
-    parts = await uploadMultipart(file, plan.storageKey, plan.uploadId, plan.partSize, plan.totalParts, (loaded) =>
+    // Saved before any part upload starts, not after: this is what makes an
+    // interruption in the first few seconds (a phone video, tab backgrounded
+    // almost immediately) resumable too, not just one that got interrupted after
+    // several parts had already succeeded.
+    await savePendingUpload({
+      sha256,
+      fileBlob: file,
+      fileName: file.name,
+      mime,
+      size: file.size,
+      storageKey: plan.storageKey,
+      uploadId: plan.uploadId,
+      partSize: plan.partSize,
+      totalParts: plan.totalParts,
+      completedParts: [],
+      batchId,
+      galleryId,
+      createdAt: Date.now(),
+    });
+    parts = await uploadMultipart(file, sha256, plan.storageKey, plan.uploadId, plan.partSize, plan.totalParts, [], (loaded) =>
       onProgress?.(loaded / file.size),
     );
   }
 
-  return api<UploadOutcome>("/api/upload/complete", {
+  const outcome = await api<UploadOutcome>("/api/upload/complete", {
     storageKey: plan.storageKey,
     uploadId: plan.mode === "multipart" ? plan.uploadId : undefined,
     parts,
     sha256,
     filename: file.name,
     size: file.size,
-    mime: file.type || "application/octet-stream",
+    mime,
     batchId,
   });
+  if (plan.mode === "multipart") await deletePendingUpload(sha256);
+  return outcome;
 }
 
 /** "Keep duplicates" path: the file's bytes are already in storage under

@@ -12,6 +12,8 @@ import {
   isAttachEligible,
   uploadFile,
 } from "./upload-lib";
+import { listPendingUploads } from "./pending-uploads-db";
+import { acquireWakeLock, reacquireWakeLockOnVisible, releaseWakeLock } from "./wake-lock";
 
 export type EntryStatus =
   | "queued"
@@ -67,6 +69,22 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
   const patchEntry = useCallback((id: string, patch: Partial<Entry>) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   }, []);
+
+  // Keeps the screen from auto-locking while a batch is running -- a real, if
+  // partial, answer to "the upload should continue even if I close the browser":
+  // the screen turning itself off is a more common interruption than a deliberate
+  // app-switch, and this is the one part of that request a web page can actually
+  // prevent (the deliberate-switch case is a platform restriction no page's code
+  // can override; pending-uploads-db.ts's resumability is the answer to *that*).
+  useEffect(() => {
+    if (!running) return;
+    acquireWakeLock();
+    const stopWatching = reacquireWakeLockOnVisible(() => running);
+    return () => {
+      stopWatching();
+      releaseWakeLock();
+    };
+  }, [running]);
 
   // Ingest happens in the background worker, after uploadFile() already resolved --
   // poll actual asset status so "processing" doesn't just sit there forever once the
@@ -148,7 +166,7 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
         }
 
         patchEntry(entry.id, { status: "uploading", progress: 0 });
-        const outcome = await uploadFile(entry.file, sha256, batchId, (fraction) =>
+        const outcome = await uploadFile(entry.file, sha256, batchId, targetGalleryId, (fraction) =>
           patchEntry(entry.id, { progress: fraction }),
         );
         patchEntry(entry.id, { status: "processing", progress: 1, assetId: outcome.assetId });
@@ -246,6 +264,29 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
     },
     [processOne, resolveGalleryId],
   );
+
+  // Auto-resume sweep, once per mount: picks up any multipart upload that was left
+  // in IndexedDB by a previous session of this same component -- the tab getting
+  // suspended and reloaded, the browser fully closed and reopened later, whatever
+  // -- and re-launches it from its stored bytes, no re-selecting the file required.
+  // This is the actual point of pending-uploads-db.ts: it's what "the upload
+  // should continue even if I close the browser" resolves to in a browser, where
+  // no page's code can keep transferring bytes while it isn't running at all.
+  useEffect(() => {
+    let cancelled = false;
+    listPendingUploads().then((pending) => {
+      if (cancelled || pending.length === 0) return;
+      const files: FileToUpload[] = pending.map((p) => ({
+        file: new File([p.fileBlob], p.fileName, { type: p.mime }),
+        galleryId: p.galleryId,
+      }));
+      runBatch(files);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately mount-only.
+  }, []);
 
   return { entries, running, runBatch };
 }
