@@ -6,6 +6,27 @@ import { filesWithPathFromFileList, readDroppedFiles, type FileWithPath } from "
 import type { DuplicateMode } from "./upload-lib";
 import { type FileToUpload, useUploader } from "./use-uploader";
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+}
+
+function formatEta(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
 /** Drag-and-drop uploader, reused both by the standalone /studio/upload page (no
  * `resolveGalleryId` -> lands in the Library only, same as before) and inline on a
  * gallery/folder page (`resolveGalleryId` returns that page's target -> every photo
@@ -54,6 +75,13 @@ export function UploadDropzone({
   const [organizedInto, setOrganizedInto] = useState<string[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settledCountRef = useRef(0);
+  // Rolling window of (timestamp, bytesDone) samples -- speed is measured across the
+  // last few seconds rather than the whole upload's lifetime average, so the ETA
+  // actually reflects current conditions (recovers quickly after a slow patch, e.g.
+  // a mobile connection hiccup mid-batch) instead of staying skewed by a slow start
+  // or a burst at the beginning.
+  const progressHistoryRef = useRef<{ t: number; bytes: number }[]>([]);
+  const [transferStats, setTransferStats] = useState<{ etaLabel: string; bytesPerSec: number } | null>(null);
   // Locked once a batch actually starts -- runBatch already captured whatever
   // duplicateMode was current at that moment (useUploader's hook argument), so
   // changing the toggle mid-upload would silently do nothing for files already
@@ -118,6 +146,45 @@ export function UploadDropzone({
   };
   const inFlight = entries.filter((e) => e.status !== "done" && e.status !== "duplicate");
   const allSettled = entries.length > 0 && inFlight.length === 0;
+
+  // Bytes actually transferred over the wire vs. total -- deliberately scoped to
+  // the upload/transfer phase only, not "everything including server-side ingest,"
+  // since that part's duration depends on a shared worker queue this page has no
+  // visibility into and couldn't honestly estimate. "unsupported" entries never
+  // transfer anything and are excluded from both sides so they don't skew the total.
+  let bytesTotal = 0;
+  let bytesDone = 0;
+  for (const e of entries) {
+    if (e.status === "unsupported") continue;
+    bytesTotal += e.file.size;
+    if (e.status === "uploading") bytesDone += e.file.size * e.progress;
+    else if (e.status !== "queued" && e.status !== "hashing") bytesDone += e.file.size;
+  }
+
+  useEffect(() => {
+    const now = Date.now();
+    const history = progressHistoryRef.current;
+    history.push({ t: now, bytes: bytesDone });
+    while (history.length > 1 && now - history[0].t > 8000) history.shift();
+
+    if (bytesTotal === 0 || bytesDone >= bytesTotal) {
+      progressHistoryRef.current = [];
+      setTransferStats(null);
+      return;
+    }
+    const oldest = history[0];
+    const elapsedSec = (now - oldest.t) / 1000;
+    const bytesInWindow = bytesDone - oldest.bytes;
+    if (elapsedSec < 1 || bytesInWindow <= 0) {
+      setTransferStats((prev) => prev ?? { etaLabel: "calculating…", bytesPerSec: 0 });
+      return;
+    }
+    const bytesPerSec = bytesInWindow / elapsedSec;
+    setTransferStats({ etaLabel: formatEta((bytesTotal - bytesDone) / bytesPerSec), bytesPerSec });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on
+    // the byte counters, not `entries` itself, so this doesn't re-run (and re-sample
+    // the timing window) on metadata-only changes that don't move any bytes.
+  }, [bytesDone, bytesTotal]);
 
   return (
     <div>
@@ -207,7 +274,8 @@ export function UploadDropzone({
         >
           {counts.done} / {counts.total} uploaded
           {counts.duplicates > 0 ? ` (${counts.duplicates} already in library)` : ""}
-          {counts.errors > 0 ? `, ${counts.errors} need attention` : ""} — view progress
+          {counts.errors > 0 ? `, ${counts.errors} need attention` : ""}
+          {transferStats ? ` — ${transferStats.etaLabel} left` : ""} — view progress
         </button>
       ) : null}
 
@@ -280,6 +348,15 @@ export function UploadDropzone({
                   <p className="mt-1 text-xs text-white/40">{counts.duplicates} already in library</p>
                 ) : null}
                 {counts.errors > 0 ? <p className="mt-1 text-xs text-red-400">{counts.errors} failed</p> : null}
+                {transferStats ? (
+                  <div className="mt-3 border-t border-white/10 pt-3">
+                    <p className="text-xs font-medium tracking-wide text-white/40 uppercase">Time left</p>
+                    <p className="mt-1 text-sm font-medium text-white/90">{transferStats.etaLabel}</p>
+                    {transferStats.bytesPerSec > 0 ? (
+                      <p className="mt-0.5 text-xs text-white/40">{formatBytes(transferStats.bytesPerSec)}/s</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
 

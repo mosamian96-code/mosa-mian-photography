@@ -87,10 +87,42 @@ async function withRetry<T>(fn: (attempt: number) => Promise<T>, retries = UPLOA
   throw lastErr;
 }
 
-async function uploadSingle(file: File, uploadUrl: string, mime: string) {
+/** PUT via XMLHttpRequest, not fetch(): fetch has no upload-progress event at all --
+ * body upload is opaque until the whole request settles, which is exactly why the
+ * single-file path below used to jump straight from 0% to 100% with nothing in
+ * between (fine for a photo, useless for an ETA on a multi-hundred-MB video, the
+ * point of adding this). xhr.upload.onprogress reports real bytes sent as the OS
+ * actually sends them, which is what makes a live ETA meaningful instead of a guess. */
+function xhrPut(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+  onProgress?: (loaded: number) => void,
+): Promise<{ etag: string | null }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(body.size);
+        resolve({ etag: xhr.getResponseHeader("ETag") });
+      } else {
+        reject(new Error(`upload failed with status ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("network error during upload"));
+    xhr.send(body);
+  });
+}
+
+async function uploadSingle(file: File, uploadUrl: string, mime: string, onProgress?: (loaded: number) => void) {
   await withRetry(async () => {
-    const res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": mime } });
-    if (!res.ok) throw new Error(`upload failed with status ${res.status}`);
+    onProgress?.(0);
+    await xhrPut(uploadUrl, file, { "Content-Type": mime }, onProgress);
   });
 }
 
@@ -102,10 +134,15 @@ async function uploadMultipart(
   uploadId: string,
   partSize: number,
   totalParts: number,
-  onPartDone?: (completed: number, total: number) => void,
+  onProgress?: (loaded: number) => void,
 ) {
   const parts: { partNumber: number; etag: string }[] = [];
   let nextPart = 1;
+  // Bytes actually sent so far, per part number -- up to PART_CONCURRENCY parts are
+  // in flight at once, each reporting its own progress independently, so the
+  // caller needs the *sum* across all of them, not any single part's fraction.
+  const loadedByPart = new Map<number, number>();
+  const reportTotal = () => onProgress?.([...loadedByPart.values()].reduce((a, b) => a + b, 0));
 
   async function worker() {
     for (;;) {
@@ -116,14 +153,16 @@ async function uploadMultipart(
       const blob = file.slice(start, Math.min(start + partSize, file.size));
 
       const etag = await withRetry(async () => {
+        loadedByPart.set(partNumber, 0);
         // Re-requested on every attempt, not just the first: a presigned URL is
         // only good for 15 minutes, and re-fetching costs nothing on a normal
         // first try but means a retry after a slow/stalled attempt doesn't hand
         // back a URL that's already close to (or past) its own expiry.
         const { url } = await api<{ url: string }>("/api/upload/part-url", { storageKey, uploadId, partNumber });
-        const res = await fetch(url, { method: "PUT", body: blob });
-        if (!res.ok) throw new Error(`part ${partNumber} upload failed with status ${res.status}`);
-        const etag = res.headers.get("ETag");
+        const { etag } = await xhrPut(url, blob, {}, (loaded) => {
+          loadedByPart.set(partNumber, loaded);
+          reportTotal();
+        });
         if (!etag) {
           throw new Error("upload succeeded but no ETag came back (check B2 bucket CORS ExposeHeaders)");
         }
@@ -131,7 +170,6 @@ async function uploadMultipart(
       });
 
       parts.push({ partNumber, etag });
-      onPartDone?.(parts.length, totalParts);
     }
   }
 
@@ -151,11 +189,12 @@ export async function uploadFile(
 
   let parts: { partNumber: number; etag: string }[] | undefined;
   if (plan.mode === "single") {
-    await uploadSingle(file, plan.uploadUrl, file.type || "application/octet-stream");
-    onProgress?.(1);
+    await uploadSingle(file, plan.uploadUrl, file.type || "application/octet-stream", (loaded) =>
+      onProgress?.(loaded / file.size),
+    );
   } else {
-    parts = await uploadMultipart(file, plan.storageKey, plan.uploadId, plan.partSize, plan.totalParts, (done, total) =>
-      onProgress?.(done / total),
+    parts = await uploadMultipart(file, plan.storageKey, plan.uploadId, plan.partSize, plan.totalParts, (loaded) =>
+      onProgress?.(loaded / file.size),
     );
   }
 
