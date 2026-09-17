@@ -64,9 +64,34 @@ export function initUpload(sha256: string, filename: string, size: number, mime:
   return api<InitResult>("/api/upload/init", { sha256, filename, size, mime });
 }
 
+const UPLOAD_RETRIES = 4;
+
+/** A large file over a flaky connection (mobile data is the common case -- a phone
+ * video is often hundreds of MB, easily minutes over cellular, during which a tower
+ * handoff or a WiFi/cellular switch can reset an in-flight request) has no server
+ * side to report a failure to when the browser's fetch() itself can't complete --
+ * that's a bare "Failed to fetch" with nothing logged anywhere, confirmed live for a
+ * phone video upload. A single dropped connection used to kill the whole upload
+ * immediately; retrying with backoff turns a transient blip into (at worst) a short
+ * pause instead of "start the whole file over from your phone." */
+async function withRetry<T>(fn: (attempt: number) => Promise<T>, retries = UPLOAD_RETRIES): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    }
+  }
+  throw lastErr;
+}
+
 async function uploadSingle(file: File, uploadUrl: string, mime: string) {
-  const res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": mime } });
-  if (!res.ok) throw new Error(`upload failed with status ${res.status}`);
+  await withRetry(async () => {
+    const res = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": mime } });
+    if (!res.ok) throw new Error(`upload failed with status ${res.status}`);
+  });
 }
 
 const PART_CONCURRENCY = 4;
@@ -89,14 +114,22 @@ async function uploadMultipart(
 
       const start = (partNumber - 1) * partSize;
       const blob = file.slice(start, Math.min(start + partSize, file.size));
-      const { url } = await api<{ url: string }>("/api/upload/part-url", { storageKey, uploadId, partNumber });
 
-      const res = await fetch(url, { method: "PUT", body: blob });
-      if (!res.ok) throw new Error(`part ${partNumber} upload failed with status ${res.status}`);
-      const etag = res.headers.get("ETag");
-      if (!etag) {
-        throw new Error("upload succeeded but no ETag came back (check B2 bucket CORS ExposeHeaders)");
-      }
+      const etag = await withRetry(async () => {
+        // Re-requested on every attempt, not just the first: a presigned URL is
+        // only good for 15 minutes, and re-fetching costs nothing on a normal
+        // first try but means a retry after a slow/stalled attempt doesn't hand
+        // back a URL that's already close to (or past) its own expiry.
+        const { url } = await api<{ url: string }>("/api/upload/part-url", { storageKey, uploadId, partNumber });
+        const res = await fetch(url, { method: "PUT", body: blob });
+        if (!res.ok) throw new Error(`part ${partNumber} upload failed with status ${res.status}`);
+        const etag = res.headers.get("ETag");
+        if (!etag) {
+          throw new Error("upload succeeded but no ETag came back (check B2 bucket CORS ExposeHeaders)");
+        }
+        return etag;
+      });
+
       parts.push({ partNumber, etag });
       onPartDone?.(parts.length, totalParts);
     }
