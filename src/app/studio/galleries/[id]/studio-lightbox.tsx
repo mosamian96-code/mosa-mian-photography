@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Item = { assetId: string; filename: string; thumbUrl: string | null };
 
@@ -61,6 +61,21 @@ export function StudioLightbox({
 
   const goNext = useCallback(() => onIndexChange((index + 1) % items.length), [index, items.length, onIndexChange]);
   const goPrev = useCallback(() => onIndexChange((index - 1 + items.length) % items.length), [index, items.length, onIndexChange]);
+
+  // Swipe left/right to navigate -- the arrow buttons exist (below) but reported as
+  // easy to miss (small, 50%-opacity on a full-bleed dark background, no touch
+  // gesture as a fallback), matching the public gallery's own lightbox, which
+  // already has this same pattern.
+  const touchStartX = useRef<number | null>(null);
+  function onTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (touchStartX.current === null) return;
+    const delta = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(delta) > 50) (delta < 0 ? goNext : goPrev)();
+    touchStartX.current = null;
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-index-change; setState happens in the async continuation below.
@@ -130,23 +145,32 @@ export function StudioLightbox({
         </div>
       </div>
 
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 pb-4" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onClick={goPrev}
-          aria-label="Previous"
-          className="absolute left-2 top-1/2 -translate-y-1/2 px-3 py-6 text-3xl text-white/50 hover:text-white sm:left-6"
-        >
-          ‹
-        </button>
-        <button
-          type="button"
-          onClick={goNext}
-          aria-label="Next"
-          className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-6 text-3xl text-white/50 hover:text-white sm:right-6"
-        >
-          ›
-        </button>
+      <div
+        className="relative flex flex-1 items-center justify-center overflow-hidden px-4 pb-4"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
+        {items.length > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={goPrev}
+              aria-label="Previous"
+              className="absolute left-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-3xl text-white/80 hover:bg-black/60 hover:text-white sm:left-6"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              aria-label="Next"
+              className="absolute right-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-3xl text-white/80 hover:bg-black/60 hover:text-white sm:right-6"
+            >
+              ›
+            </button>
+          </>
+        ) : null}
 
         {detail?.asset.previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
