@@ -120,9 +120,9 @@ export default function FolderDetailPage() {
       <Link href="/studio/folders" className="text-sm text-neutral-400 hover:text-neutral-900 dark:text-neutral-500 dark:hover:text-neutral-100">
         ← Folders
       </Link>
-      <div className="mt-2 flex items-center justify-between">
-        <h1 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">{folder.title}</h1>
-        <div className="flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h1 className="min-w-0 break-words text-lg font-medium text-neutral-900 dark:text-neutral-100">{folder.title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => {

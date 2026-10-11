@@ -211,9 +211,9 @@ export default function GalleryEditorPage() {
       <Link href={`/studio/folders/${gallery.folderId}`} className="text-sm text-neutral-400 hover:text-neutral-900 dark:text-neutral-500 dark:hover:text-neutral-100">
         ← Folder
       </Link>
-      <div className="mt-2 flex items-center justify-between">
-        <h1 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">{gallery.title}</h1>
-        <div className="flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h1 className="min-w-0 break-words text-lg font-medium text-neutral-900 dark:text-neutral-100">{gallery.title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
@@ -266,10 +266,10 @@ export default function GalleryEditorPage() {
       ) : null}
 
       <section className="mt-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Photos ({items.length})</h2>
           {items.length > 0 ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {bulkMode ? (
                 <>
                   <span className="text-xs text-neutral-400 dark:text-neutral-500">{bulkSelected.size} selected</span>

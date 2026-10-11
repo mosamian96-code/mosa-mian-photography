@@ -74,6 +74,15 @@ export function UploadDropzone({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [organizedInto, setOrganizedInto] = useState<string[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Defaults to false (desktop) for the server-rendered pass, then corrects itself
+  // on mount -- touch capability isn't knowable during SSR, and guessing "desktop"
+  // first is the safe direction, since the only consequence of a wrong guess is
+  // one extra render before the real picker attributes apply, not a broken upload.
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads navigator, which doesn't exist during SSR.
+    setIsTouchDevice(navigator.maxTouchPoints > 0 || "ontouchstart" in window);
+  }, []);
   const settledCountRef = useRef(0);
   // Rolling window of (timestamp, bytesDone) samples -- speed is measured across the
   // last few seconds rather than the whole upload's lifetime average, so the ETA
@@ -237,15 +246,17 @@ export function UploadDropzone({
         }`}
       >
         <p className={`text-neutral-600 dark:text-neutral-400 ${compact ? "text-xs" : "text-sm"}`}>
-          {baseFolderId
-            ? compact
-              ? "Drop photos or folders here"
-              : "Drop a folder here — each subfolder becomes its own gallery"
-            : compact
-              ? "Drop photos here"
-              : "Drop a folder here"}
+          {isTouchDevice
+            ? "Choose photos or videos from your phone"
+            : baseFolderId
+              ? compact
+                ? "Drop photos or folders here"
+                : "Drop a folder here — each subfolder becomes its own gallery"
+              : compact
+                ? "Drop photos here"
+                : "Drop a folder here"}
         </p>
-        {!compact ? <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">or</p> : null}
+        {!compact && !isTouchDevice ? <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">or</p> : null}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
@@ -253,13 +264,21 @@ export function UploadDropzone({
             compact ? "mt-2 px-2.5 py-1 text-xs" : "mt-2 px-3 py-1.5 text-sm"
           }`}
         >
-          Choose files
+          {isTouchDevice ? "Choose photos or videos" : "Choose files"}
         </button>
         <input
           ref={fileInputRef}
           type="file"
+          // webkitdirectory forces a folder/file-system browser, not the native
+          // Photos/Gallery picker -- exactly backwards from what a phone visitor
+          // wants (confirmed live: "it goes to all my files... instead it should go
+          // directly to my media gallery"). Folder uploads are a desktop/drag-drop
+          // feature to begin with (there's no dragging a folder on a touchscreen),
+          // so this only applies when there's no touch capability to hand it to a
+          // media-only picker instead. accept scopes that picker to photos/videos.
           // @ts-expect-error -- webkitdirectory has no TS typing but is broadly supported
-          webkitdirectory={compact ? undefined : ""}
+          webkitdirectory={compact || isTouchDevice ? undefined : ""}
+          accept={isTouchDevice ? "image/*,video/*" : undefined}
           multiple
           className="hidden"
           onChange={handlePick}
@@ -372,13 +391,13 @@ export function UploadDropzone({
               }`}
             >
               <UploadCloudIcon />
-              <span className="text-white/60">Drag photos here or</span>
+              <span className="text-white/60">{isTouchDevice ? "Add more from" : "Drag photos here or"}</span>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="font-medium text-emerald-400 hover:text-emerald-300"
               >
-                browse your computer
+                {isTouchDevice ? "your photos" : "browse your computer"}
               </button>
             </div>
             <div className="h-1 bg-white/10">

@@ -165,13 +165,19 @@ export function GallerySettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-3 sm:p-6" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl overflow-hidden rounded bg-white dark:bg-neutral-900"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded bg-white sm:flex-row dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <nav className="w-44 shrink-0 border-r border-neutral-200 py-4 dark:border-neutral-800">
-          <h3 className="px-4 pb-3 text-sm font-medium text-neutral-900 dark:text-neutral-100">Gallery Settings</h3>
+        {/* A fixed-width left sidebar left almost no room for the actual settings on
+            a phone (176px out of ~330px available inside the dialog). Below `sm` this
+            becomes a horizontally-scrollable tab strip above the content instead --
+            same tabs, same click targets, just laid out for a narrow screen. */}
+        <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-neutral-200 px-3 py-2 sm:w-44 sm:flex-col sm:gap-0 sm:overflow-visible sm:border-b-0 sm:border-r sm:px-0 sm:py-4 dark:border-neutral-800">
+          <h3 className="hidden shrink-0 px-4 pb-3 text-sm font-medium text-neutral-900 sm:block dark:text-neutral-100">
+            Gallery Settings
+          </h3>
           {TABS.map((t) => (
             <button
               key={t}
@@ -182,10 +188,10 @@ export function GallerySettingsModal({
                   loadGalleryItems();
                 }
               }}
-              className={`block w-full px-4 py-2 text-left text-sm ${
+              className={`shrink-0 whitespace-nowrap rounded px-3 py-1.5 text-left text-sm sm:block sm:w-full sm:rounded-none sm:border-l-2 sm:px-4 sm:py-2 ${
                 tab === t
-                  ? "border-l-2 border-neutral-900 bg-neutral-100 font-medium text-neutral-900 dark:border-neutral-100 dark:bg-neutral-800 dark:text-neutral-100"
-                  : "border-l-2 border-transparent text-neutral-500 hover:bg-neutral-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  ? "bg-neutral-100 font-medium text-neutral-900 sm:border-neutral-900 sm:bg-neutral-100 dark:bg-neutral-800 dark:text-neutral-100 dark:sm:border-neutral-100"
+                  : "text-neutral-500 hover:bg-neutral-50 sm:border-transparent dark:text-neutral-400 dark:hover:bg-neutral-800"
               }`}
             >
               {t}
@@ -194,7 +200,7 @@ export function GallerySettingsModal({
         </nav>
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5">
             {tab === "Basics" ? (
               <div className="space-y-4">
                 <label className={labelClass}>
@@ -417,7 +423,7 @@ export function GallerySettingsModal({
             ) : null}
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-5 py-3 dark:border-neutral-800">
+          <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 sm:px-5 dark:border-neutral-800">
             <button
               type="button"
               onClick={onClose}
