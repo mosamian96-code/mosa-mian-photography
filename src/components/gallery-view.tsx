@@ -174,6 +174,14 @@ export function GalleryView({
             Download all
           </a>
         ) : null}
+        {clientControls?.downloadsEnabled ? (
+          <a
+            href={`/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}`}
+            className="rounded border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+          >
+            Download all
+          </a>
+        ) : null}
         <div role="group" aria-label="Image size" className="inline-flex rounded border border-neutral-200 bg-white p-0.5">
           {SIZE_OPTIONS.map((opt) => (
             <button
