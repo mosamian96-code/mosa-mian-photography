@@ -35,12 +35,28 @@ cdn.mosamianphotography.com {
 	# that stale 404 forever after, long after the object became fetchable. Only
 	# successful responses are safe to mark immutable; errors get no-store so a
 	# retry can actually reach the origin again.
+	#
+	# The first attempt at this fix (bare `header_down @matcher ...` with no
+	# handle_response) silently did NOT gate on status at all -- confirmed live via
+	# `caddy adapt`: it compiled to a single unconditional header-set handler, so
+	# every response, including fresh 404s, kept getting the immutable header this
+	# whole time. handle_response is the actual documented mechanism for
+	# conditioning on the proxied response's status.
 	reverse_proxy app:3000 {
-		@success status 2xx
-		header_down @success Cache-Control "public, max-age=31536000, immutable"
-
+		# The app's own route (src/app/api/cdn/[...key]/route.ts) already sets
+		# Cache-Control: immutable on a real 200 -- only the error path needs
+		# touching here, so this only overrides on 4xx/5xx rather than also
+		# re-asserting the same value Caddy would otherwise duplicate on success.
 		@failure status 4xx 5xx
-		header_down @failure Cache-Control "no-store"
+		handle_response @failure {
+			# copy_response is required, not optional -- without it a
+			# handle_response block does NOT pass the real proxied status/body
+			# through at all, confirmed live: every response came back as an
+			# empty 200 with no body the moment this fix first went in, because
+			# nothing told Caddy to actually forward what the app returned.
+			copy_response
+			header Cache-Control "no-store"
+		}
 	}
 
 	encode zstd gzip
