@@ -50,6 +50,10 @@ export async function GET(req: NextRequest) {
   if (items.length === 0) return NextResponse.json({ error: "no matching photos" }, { status: 404 });
 
   const archive = new ZipArchive({ zlib: { level: 6 } });
+  // See public/gallery-download-zip/route.ts -- archive is an EventEmitter, and
+  // without a listener here, destroy(error) or a client disconnecting mid-download
+  // throws an uncaught exception instead of just failing this one request.
+  archive.on("error", () => {});
 
   (async () => {
     try {

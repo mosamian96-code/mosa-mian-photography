@@ -38,6 +38,14 @@ export async function GET(req: NextRequest) {
   if (items.length === 0) return NextResponse.json({ error: "gallery is empty" }, { status: 404 });
 
   const archive = new ZipArchive({ zlib: { level: 6 } });
+  // archive is an EventEmitter -- destroy(error) below (or a client disconnecting
+  // mid-download) emits 'error' on it, and Node throws synchronously -- as an
+  // uncaught exception that crashes past this route entirely -- if nothing is
+  // listening. Confirmed live: this was happening repeatedly in production
+  // (visible as "Error: aborted" / "uncaughtException: Error: aborted" in the
+  // app logs) and correlates with the app process wedging into a state where
+  // every request, including unrelated ones, times out until restarted.
+  archive.on("error", () => {});
 
   (async () => {
     try {
