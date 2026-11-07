@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { and, eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { ContactForm } from "@/components/contact-form";
 import { PublicShell } from "@/components/public-shell";
 import { RevealOnView } from "@/components/reveal-on-view";
@@ -18,6 +19,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Contact — Mosa Mian Photography" };
 
 export default async function ContactPage() {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   const settings = await getSiteSettings();
   const profileThumb = settings.profileAssetId
     ? await db.query.derivatives.findFirst({
@@ -53,7 +55,7 @@ export default async function ContactPage() {
 
           <RevealOnView delayMs={120}>
             <div className="mt-8 rounded border border-neutral-200 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:p-8">
-              <ContactForm turnstileSiteKey={process.env.TURNSTILE_SITE_KEY ?? null} />
+              <ContactForm turnstileSiteKey={process.env.TURNSTILE_SITE_KEY ?? null} nonce={nonce} />
             </div>
           </RevealOnView>
 

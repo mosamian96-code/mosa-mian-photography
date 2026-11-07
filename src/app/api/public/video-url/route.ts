@@ -3,11 +3,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets, galleryItems, galleries } from "@/lib/db/schema";
 import { presignGetUrl } from "@/lib/storage";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorLogging("public-video-url", async (req: NextRequest) => {
   const galleryId = req.nextUrl.searchParams.get("galleryId");
   const assetId = req.nextUrl.searchParams.get("assetId");
 
@@ -36,4 +37,4 @@ export async function GET(req: NextRequest) {
 
   const url = await presignGetUrl(asset.storageKey, 3600);
   return NextResponse.json({ url });
-}
+});

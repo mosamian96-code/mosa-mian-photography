@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { favorites, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorLogging("public-favorites", async (req: NextRequest) => {
   const { clientAccessId, assetId } = (await req.json()) as { clientAccessId?: string; assetId?: string };
   if (!clientAccessId || !assetId) {
     return NextResponse.json({ error: "clientAccessId and assetId required" }, { status: 400 });
@@ -32,4 +33,4 @@ export async function POST(req: NextRequest) {
   }
   await db.insert(favorites).values({ clientAccessId, assetId });
   return NextResponse.json({ favorited: true });
-}
+});

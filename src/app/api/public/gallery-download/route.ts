@@ -5,6 +5,7 @@ import { assets, galleries, galleryItems } from "@/lib/db/schema";
 import { resolveDownloadTarget } from "@/lib/public-site/download";
 import { gallerySessionCookieName, publicVisitorCanViewGallery } from "@/lib/public-site/gallery-auth";
 import { presignDownloadUrl } from "@/lib/storage";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 // The public counterpart to /api/public/download (which is client-proofing-link
 // only): gated by gallery.publicDownloadsPolicy plus the same view-authorization a
 // visitor needs to see the gallery page at all, rather than a client link.
-export async function GET(req: NextRequest) {
+export const GET = withErrorLogging("public-gallery-download", async (req: NextRequest) => {
   const galleryId = req.nextUrl.searchParams.get("galleryId");
   const assetId = req.nextUrl.searchParams.get("assetId");
   if (!galleryId || !assetId) {
@@ -41,4 +42,4 @@ export async function GET(req: NextRequest) {
 
   const url = await presignDownloadUrl(target.storageKey, target.filename);
   return NextResponse.redirect(url);
-}
+});

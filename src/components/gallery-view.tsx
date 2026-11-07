@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ErrorBoundary } from "./error-boundary";
 import { FocusFrame } from "./focus-frame";
 import { JustifiedGrid } from "./justified-grid";
 import type { GalleryImage } from "@/lib/public-site/resolve";
@@ -200,11 +201,12 @@ export function GalleryView({
         </div>
       </div>
 
-      <JustifiedGrid
-        items={images.map((img) => ({ id: img.assetId, aspect: (img.width ?? 3) / (img.height ?? 2) }))}
-        targetRowHeight={targetRowHeight}
-        gap={4}
-        renderItem={(_gridItem, width, height, index) => {
+      <ErrorBoundary fallback={<p className="py-16 text-center text-sm text-neutral-400">This gallery couldn&apos;t load.</p>}>
+        <JustifiedGrid
+          items={images.map((img) => ({ id: img.assetId, aspect: (img.width ?? 3) / (img.height ?? 2) }))}
+          targetRowHeight={targetRowHeight}
+          gap={4}
+          renderItem={(_gridItem, width, height, index) => {
           const image = images[index];
           const src = pickSrc(image.urls, pickVariantForWidth(width));
           const isEager = index < EAGER_COUNT;
@@ -246,9 +248,11 @@ export function GalleryView({
             </button>
           );
         }}
-      />
+        />
+      </ErrorBoundary>
 
       {isOpen && openIndex !== null ? (
+        <ErrorBoundary fallback={null}>
         <Lightbox
           images={images}
           index={openIndex}
@@ -273,6 +277,7 @@ export function GalleryView({
               : undefined
           }
         />
+        </ErrorBoundary>
       ) : null}
     </>
   );

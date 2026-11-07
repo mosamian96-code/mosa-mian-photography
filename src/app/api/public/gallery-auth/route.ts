@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { galleries } from "@/lib/db/schema";
 import { gallerySessionCookieName, gallerySessionCookieValue } from "@/lib/public-site/gallery-auth";
 import { verifyPassword } from "@/lib/password";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 // A password gate is a speed bump, not protection (brief section 9) — this is
 // deliberately simple: one shared password per gallery, checked here, unlocked with a
 // signed cookie rather than a real per-client session.
-export async function POST(req: NextRequest) {
+export const POST = withErrorLogging("public-gallery-auth", async (req: NextRequest) => {
   const { galleryId, password } = (await req.json()) as { galleryId?: string; password?: string };
   if (!galleryId || !password) {
     return NextResponse.json({ error: "galleryId and password required" }, { status: 400 });
@@ -31,4 +32,4 @@ export async function POST(req: NextRequest) {
     path: "/",
   });
   return res;
-}
+});

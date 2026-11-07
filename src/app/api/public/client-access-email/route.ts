@@ -2,16 +2,19 @@ import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { clientAccess } from "@/lib/db/schema";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Optional email capture before viewing (brief section 9) — stored directly on the
 // client_access row so the admin's client list picks it up without a separate table.
-export async function POST(req: NextRequest) {
+export const POST = withErrorLogging("public-client-access-email", async (req: NextRequest) => {
   const { token, email } = (await req.json()) as { token?: string; email?: string };
-  if (!token || !email?.trim()) {
-    return NextResponse.json({ error: "token and email required" }, { status: 400 });
+  if (!token || !email?.trim() || !EMAIL_RE.test(email.trim())) {
+    return NextResponse.json({ error: "token and a valid email are required" }, { status: 400 });
   }
 
   const link = await db.query.clientAccess.findFirst({ where: eq(clientAccess.token, token) });
@@ -25,4 +28,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true });
-}
+});

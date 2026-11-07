@@ -1,7 +1,7 @@
 import { StudioHeader } from "./studio-header";
 import { StudioProviders } from "./providers";
 import { StudioSidebar } from "./studio-sidebar";
-import { ThemeScript } from "./theme-toggle";
+import { ThemeScript } from "./theme-script";
 
 export const metadata = {
   title: "Studio — Mosa Mian Photography",

@@ -162,6 +162,8 @@ export default function Lightbox({
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const touchStartX = useRef<number | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
 
   const goNext = useCallback(() => onNavigate((index + 1) % images.length), [index, images.length, onNavigate]);
   const goPrev = useCallback(
@@ -177,11 +179,41 @@ export default function Lightbox({
     setTimeout(onClose, CLOSE_MS);
   }, [onClose]);
 
+  // Focus trap: a modal dialog must not let Tab escape into the page behind it (WCAG
+  // 2.2 AA keyboard-interaction requirement). Moves focus in on mount and restores it
+  // to whatever had focus before opening, on close.
   useEffect(() => {
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previouslyFocused.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function focusableElements() {
+      return Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button, a[href], input, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => !el.hasAttribute("disabled"));
+    }
+
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "Escape") requestClose();
+      else if (e.key === "Tab") {
+        const elements = focusableElements();
+        if (elements.length === 0) return;
+        const first = elements[0];
+        const last = elements[elements.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -234,7 +266,12 @@ export default function Lightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 p-4"
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Photo viewer, image ${index + 1} of ${images.length}`}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 p-4 outline-none"
       style={{
         animation: `${closing ? "lightbox-backdrop-out" : "lightbox-backdrop-in"} ${CLOSE_MS}ms var(--ease-swap) forwards`,
       }}

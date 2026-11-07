@@ -3,7 +3,13 @@
 import Script from "next/script";
 import { useState } from "react";
 
-export function ContactForm({ turnstileSiteKey }: { turnstileSiteKey: string | null }) {
+export function ContactForm({
+  turnstileSiteKey,
+  nonce,
+}: {
+  turnstileSiteKey: string | null;
+  nonce?: string;
+}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -47,7 +53,9 @@ export function ContactForm({ turnstileSiteKey }: { turnstileSiteKey: string | n
 
   return (
     <>
-      {turnstileSiteKey ? <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer /> : null}
+      {turnstileSiteKey ? (
+        <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer nonce={nonce} />
+      ) : null}
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
           <span className={labelClass}>Name</span>

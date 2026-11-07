@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const STORAGE_KEY = "studio-theme";
+export const STORAGE_KEY = "studio-theme";
 
 function applyTheme(dark: boolean) {
   document.documentElement.classList.toggle("dark", dark);
@@ -43,10 +43,3 @@ export function ThemeToggle() {
   );
 }
 
-/** Inline, blocking, runs before first paint (rendered directly in layout.tsx, not as
- * a hydrated component) -- sets the .dark class from localStorage immediately so
- * there's no flash of the wrong theme while React hydrates. */
-export function ThemeScript() {
-  const code = `(function(){try{var t=localStorage.getItem('${STORAGE_KEY}');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
-  return <script dangerouslySetInnerHTML={{ __html: code }} />;
-}

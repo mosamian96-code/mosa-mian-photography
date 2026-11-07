@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { comments, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorLogging("public-comments", async (req: NextRequest) => {
   const { clientAccessId, assetId, body } = (await req.json()) as {
     clientAccessId?: string;
     assetId?: string;
@@ -32,4 +33,4 @@ export async function POST(req: NextRequest) {
     .returning();
 
   return NextResponse.json(comment);
-}
+});

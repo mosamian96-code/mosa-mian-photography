@@ -4,11 +4,12 @@ import { db } from "@/lib/db";
 import { clientAccess } from "@/lib/db/schema";
 import { clientAccessSessionCookieName, clientAccessSessionCookieValue } from "@/lib/public-site/client-access-auth";
 import { verifyPassword } from "@/lib/password";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorLogging("public-client-access-auth", async (req: NextRequest) => {
   const { token, password } = (await req.json()) as { token?: string; password?: string };
   if (!token || !password) {
     return NextResponse.json({ error: "token and password required" }, { status: 400 });
@@ -29,4 +30,4 @@ export async function POST(req: NextRequest) {
     path: "/",
   });
   return res;
-}
+});

@@ -3,11 +3,14 @@ import { Resend } from "resend";
 import { db } from "@/lib/db";
 import { contactSubmissions } from "@/lib/db/schema";
 import { verifyTurnstile } from "@/lib/turnstile";
+import { withErrorLogging } from "@/lib/with-error-logging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const POST = withErrorLogging("contact", async (req: NextRequest) => {
   const { name, email, message, turnstileToken } = (await req.json()) as {
     name?: string;
     email?: string;
@@ -16,6 +19,9 @@ export async function POST(req: NextRequest) {
   };
   if (!name?.trim() || !email?.trim() || !message?.trim()) {
     return NextResponse.json({ error: "name, email, and message are required" }, { status: 400 });
+  }
+  if (!EMAIL_RE.test(email.trim())) {
+    return NextResponse.json({ error: "please enter a valid email address" }, { status: 400 });
   }
   if (!turnstileToken) {
     return NextResponse.json({ error: "verification required" }, { status: 400 });
@@ -45,4 +51,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true });
-}
+});

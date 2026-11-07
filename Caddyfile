@@ -18,6 +18,10 @@ mosamianphotography.com, www.mosamianphotography.com {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		# The site uses none of these device APIs anywhere (the homepage's Three.js
+		# camera intro is pure WebGL, no getUserMedia) -- denying them outright costs
+		# nothing and closes off a class of exploit if a future dependency ever tries.
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 	}
 }
 
