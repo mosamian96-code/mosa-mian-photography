@@ -69,9 +69,18 @@ export function UploadDropzone({
   contextTitle?: string;
 }) {
   const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>("skip");
-  const { entries, runBatch } = useUploader(resolveGalleryId, duplicateMode);
+  const { entries, running, runBatch, cancelBatch } = useUploader(resolveGalleryId, duplicateMode);
   const [isDragging, setIsDragging] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Only asked when there's actually something to lose -- `running` reflects the
+  // client-side upload loop specifically (queued/hashing/uploading), not entries
+  // still "processing" server-side after their bytes already finished transferring,
+  // which cancelling here can't do anything about anyway.
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  const requestCloseDialog = () => {
+    if (running) setConfirmCancelOpen(true);
+    else setDialogOpen(false);
+  };
   const [organizedInto, setOrganizedInto] = useState<string[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Defaults to false (desktop) for the server-rendered pass, then corrects itself
@@ -152,6 +161,7 @@ export function UploadDropzone({
     // distinct photos despite the dialog's total climbing across several drops.
     duplicates: entries.filter((e) => e.status === "duplicate").length,
     errors: entries.filter((e) => e.status === "error" || e.status === "unsupported").length,
+    cancelled: entries.filter((e) => e.status === "cancelled").length,
   };
   const inFlight = entries.filter((e) => e.status !== "done" && e.status !== "duplicate");
   const allSettled = entries.length > 0 && inFlight.length === 0;
@@ -294,6 +304,7 @@ export function UploadDropzone({
           {counts.done} / {counts.total} uploaded
           {counts.duplicates > 0 ? ` (${counts.duplicates} already in library)` : ""}
           {counts.errors > 0 ? `, ${counts.errors} need attention` : ""}
+          {counts.cancelled > 0 ? `, ${counts.cancelled} cancelled` : ""}
           {transferStats ? ` — ${transferStats.etaLabel} left` : ""} — view progress
         </button>
       ) : null}
@@ -301,7 +312,7 @@ export function UploadDropzone({
       {dialogOpen && entries.length > 0 ? (
         <div
           className="fixed inset-0 z-40 flex items-start justify-center bg-black/60 p-4 pt-16 sm:pt-24"
-          onClick={() => setDialogOpen(false)}
+          onClick={requestCloseDialog}
         >
           <div
             className="flex max-h-[75vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-neutral-950 text-neutral-100 shadow-2xl"
@@ -320,7 +331,7 @@ export function UploadDropzone({
               </div>
               <button
                 type="button"
-                onClick={() => setDialogOpen(false)}
+                onClick={requestCloseDialog}
                 aria-label="Close"
                 className="shrink-0 text-white/50 hover:text-white"
               >
@@ -367,6 +378,7 @@ export function UploadDropzone({
                   <p className="mt-1 text-xs text-white/40">{counts.duplicates} already in library</p>
                 ) : null}
                 {counts.errors > 0 ? <p className="mt-1 text-xs text-red-400">{counts.errors} failed</p> : null}
+                {counts.cancelled > 0 ? <p className="mt-1 text-xs text-white/40">{counts.cancelled} cancelled</p> : null}
                 {transferStats ? (
                   <div className="mt-3 border-t border-white/10 pt-3">
                     <p className="text-xs font-medium tracking-wide text-white/40 uppercase">Time left</p>
@@ -405,6 +417,38 @@ export function UploadDropzone({
                 className="h-full bg-emerald-500 transition-all"
                 style={{ width: `${Math.round((counts.done / (counts.total || 1)) * 100)}%` }}
               />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmCancelOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-neutral-900 p-5 text-neutral-100 shadow-2xl">
+            <h3 className="text-sm font-medium">Cancel upload?</h3>
+            <p className="mt-2 text-xs text-white/60">
+              {inFlight.length} file{inFlight.length === 1 ? "" : "s"} still uploading will stop. Anything already
+              finished stays.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmCancelOpen(false)}
+                className="rounded px-3 py-1.5 text-xs text-white/70 hover:text-white"
+              >
+                Keep uploading
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  cancelBatch();
+                  setConfirmCancelOpen(false);
+                  setDialogOpen(false);
+                }}
+                className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+              >
+                Cancel upload
+              </button>
             </div>
           </div>
         </div>

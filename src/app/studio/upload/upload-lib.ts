@@ -13,11 +13,12 @@ export async function hashFile(file: File): Promise<string> {
     .join("");
 }
 
-async function api<T>(path: string, body: unknown): Promise<T> {
+async function api<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -38,8 +39,8 @@ export type CheckResult = {
   storageKey?: string;
 };
 
-export function checkDuplicate(sha256: string, batchId: string, mode: DuplicateMode = "skip") {
-  return api<CheckResult>("/api/upload/check", { sha256, batchId, mode });
+export function checkDuplicate(sha256: string, batchId: string, mode: DuplicateMode = "skip", signal?: AbortSignal) {
+  return api<CheckResult>("/api/upload/check", { sha256, batchId, mode }, signal);
 }
 
 export function createBatch(totalFiles: number) {
@@ -62,8 +63,8 @@ type InitResult =
   | { mode: "single"; storageKey: string; uploadUrl: string }
   | { mode: "multipart"; storageKey: string; uploadId: string; partSize: number; totalParts: number };
 
-export function initUpload(sha256: string, filename: string, size: number, mime: string) {
-  return api<InitResult>("/api/upload/init", { sha256, filename, size, mime });
+export function initUpload(sha256: string, filename: string, size: number, mime: string, signal?: AbortSignal) {
+  return api<InitResult>("/api/upload/init", { sha256, filename, size, mime }, signal);
 }
 
 const UPLOAD_RETRIES = 4;
@@ -76,12 +77,21 @@ const UPLOAD_RETRIES = 4;
  * phone video upload. A single dropped connection used to kill the whole upload
  * immediately; retrying with backoff turns a transient blip into (at worst) a short
  * pause instead of "start the whole file over from your phone." */
-async function withRetry<T>(fn: (attempt: number) => Promise<T>, retries = UPLOAD_RETRIES): Promise<T> {
+async function withRetry<T>(
+  fn: (attempt: number) => Promise<T>,
+  signal?: AbortSignal,
+  retries = UPLOAD_RETRIES,
+): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    // A deliberate cancellation isn't a transient blip to retry past -- without this
+    // check, cancelling mid-backoff-delay would just retry the same request again a
+    // moment later instead of actually stopping.
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
     try {
       return await fn(attempt);
     } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) throw err;
       lastErr = err;
       if (attempt < retries) await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
     }
@@ -100,6 +110,7 @@ function xhrPut(
   body: Blob,
   headers: Record<string, string>,
   onProgress?: (loaded: number) => void,
+  signal?: AbortSignal,
 ): Promise<{ etag: string | null }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -108,7 +119,25 @@ function xhrPut(
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(e.loaded);
     };
+    // fetch() takes an AbortSignal natively; XMLHttpRequest doesn't, so cancellation
+    // means listening for it ourselves and calling the one method XHR does have --
+    // without this, "Cancel upload" would stop new requests from starting but leave
+    // whichever PUT was already in flight running to completion in the background,
+    // exactly the behavior being fixed.
+    const onAbort = () => {
+      xhr.abort();
+      reject(new DOMException("aborted", "AbortError"));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort);
+    }
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
     xhr.onload = () => {
+      cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         onProgress?.(body.size);
         resolve({ etag: xhr.getResponseHeader("ETag") });
@@ -116,16 +145,28 @@ function xhrPut(
         reject(new Error(`upload failed with status ${xhr.status}`));
       }
     };
-    xhr.onerror = () => reject(new Error("network error during upload"));
+    xhr.onerror = () => {
+      cleanup();
+      reject(new Error("network error during upload"));
+    };
     xhr.send(body);
   });
 }
 
-async function uploadSingle(file: File, uploadUrl: string, mime: string, onProgress?: (loaded: number) => void) {
-  await withRetry(async () => {
-    onProgress?.(0);
-    await xhrPut(uploadUrl, file, { "Content-Type": mime }, onProgress);
-  });
+async function uploadSingle(
+  file: File,
+  uploadUrl: string,
+  mime: string,
+  onProgress?: (loaded: number) => void,
+  signal?: AbortSignal,
+) {
+  await withRetry(
+    async () => {
+      onProgress?.(0);
+      await xhrPut(uploadUrl, file, { "Content-Type": mime }, onProgress, signal);
+    },
+    signal,
+  );
 }
 
 const PART_CONCURRENCY = 4;
@@ -139,6 +180,7 @@ async function uploadMultipart(
   totalParts: number,
   alreadyCompleted: { partNumber: number; etag: string }[],
   onProgress?: (loaded: number) => void,
+  signal?: AbortSignal,
 ) {
   const parts: { partNumber: number; etag: string }[] = [...alreadyCompleted];
   const doneNumbers = new Set(alreadyCompleted.map((p) => p.partNumber));
@@ -159,6 +201,7 @@ async function uploadMultipart(
 
   async function worker() {
     for (;;) {
+      if (signal?.aborted) return;
       const partNumber = nextPart++;
       if (partNumber > totalParts) return;
       if (doneNumbers.has(partNumber)) continue;
@@ -166,22 +209,35 @@ async function uploadMultipart(
       const start = (partNumber - 1) * partSize;
       const blob = file.slice(start, Math.min(start + partSize, file.size));
 
-      const etag = await withRetry(async () => {
-        loadedByPart.set(partNumber, 0);
-        // Re-requested on every attempt, not just the first: a presigned URL is
-        // only good for 15 minutes, and re-fetching costs nothing on a normal
-        // first try but means a retry after a slow/stalled attempt doesn't hand
-        // back a URL that's already close to (or past) its own expiry.
-        const { url } = await api<{ url: string }>("/api/upload/part-url", { storageKey, uploadId, partNumber });
-        const { etag } = await xhrPut(url, blob, {}, (loaded) => {
-          loadedByPart.set(partNumber, loaded);
-          reportTotal();
-        });
-        if (!etag) {
-          throw new Error("upload succeeded but no ETag came back (check B2 bucket CORS ExposeHeaders)");
-        }
-        return etag;
-      });
+      const etag = await withRetry(
+        async () => {
+          loadedByPart.set(partNumber, 0);
+          // Re-requested on every attempt, not just the first: a presigned URL is
+          // only good for 15 minutes, and re-fetching costs nothing on a normal
+          // first try but means a retry after a slow/stalled attempt doesn't hand
+          // back a URL that's already close to (or past) its own expiry.
+          const { url } = await api<{ url: string }>(
+            "/api/upload/part-url",
+            { storageKey, uploadId, partNumber },
+            signal,
+          );
+          const { etag } = await xhrPut(
+            url,
+            blob,
+            {},
+            (loaded) => {
+              loadedByPart.set(partNumber, loaded);
+              reportTotal();
+            },
+            signal,
+          );
+          if (!etag) {
+            throw new Error("upload succeeded but no ETag came back (check B2 bucket CORS ExposeHeaders)");
+          }
+          return etag;
+        },
+        signal,
+      );
 
       parts.push({ partNumber, etag });
       await persistProgress();
@@ -200,6 +256,7 @@ export async function uploadFile(
   batchId: string,
   galleryId: string | null,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<UploadOutcome> {
   const mime = file.type || "application/octet-stream";
 
@@ -222,7 +279,12 @@ export async function uploadFile(
       pending.totalParts,
       pending.completedParts,
       (loaded) => onProgress?.(loaded / file.size),
+      signal,
     );
+    // No signal here on purpose: by this point every byte is already on B2, so
+    // aborting this specific call would only orphan them -- a finalize call this
+    // close to done is worth letting finish rather than leaving no asset row and no
+    // resumable record for bytes that are, in fact, already fully uploaded.
     const outcome = await api<UploadOutcome>("/api/upload/complete", {
       storageKey: pending.storageKey,
       uploadId: pending.uploadId,
@@ -237,11 +299,11 @@ export async function uploadFile(
     return outcome;
   }
 
-  const plan = await initUpload(sha256, file.name, file.size, mime);
+  const plan = await initUpload(sha256, file.name, file.size, mime, signal);
 
   let parts: { partNumber: number; etag: string }[] | undefined;
   if (plan.mode === "single") {
-    await uploadSingle(file, plan.uploadUrl, mime, (loaded) => onProgress?.(loaded / file.size));
+    await uploadSingle(file, plan.uploadUrl, mime, (loaded) => onProgress?.(loaded / file.size), signal);
   } else {
     // Saved before any part upload starts, not after: this is what makes an
     // interruption in the first few seconds (a phone video, tab backgrounded
@@ -262,11 +324,20 @@ export async function uploadFile(
       galleryId,
       createdAt: Date.now(),
     });
-    parts = await uploadMultipart(file, sha256, plan.storageKey, plan.uploadId, plan.partSize, plan.totalParts, [], (loaded) =>
-      onProgress?.(loaded / file.size),
+    parts = await uploadMultipart(
+      file,
+      sha256,
+      plan.storageKey,
+      plan.uploadId,
+      plan.partSize,
+      plan.totalParts,
+      [],
+      (loaded) => onProgress?.(loaded / file.size),
+      signal,
     );
   }
 
+  // No signal here either, same reasoning as the resume branch above.
   const outcome = await api<UploadOutcome>("/api/upload/complete", {
     storageKey: plan.storageKey,
     uploadId: plan.mode === "multipart" ? plan.uploadId : undefined,
@@ -290,14 +361,19 @@ export function completeDuplicate(
   sha256: string,
   file: File,
   batchId: string,
+  signal?: AbortSignal,
 ): Promise<UploadOutcome> {
-  return api<UploadOutcome>("/api/upload/complete", {
-    storageKey: existingStorageKey,
-    sha256,
-    filename: file.name,
-    size: file.size,
-    mime: file.type || "application/octet-stream",
-    batchId,
-    forceNewCopy: true,
-  });
+  return api<UploadOutcome>(
+    "/api/upload/complete",
+    {
+      storageKey: existingStorageKey,
+      sha256,
+      filename: file.name,
+      size: file.size,
+      mime: file.type || "application/octet-stream",
+      batchId,
+      forceNewCopy: true,
+    },
+    signal,
+  );
 }

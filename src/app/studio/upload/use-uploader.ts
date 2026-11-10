@@ -12,7 +12,7 @@ import {
   isAttachEligible,
   uploadFile,
 } from "./upload-lib";
-import { listPendingUploads } from "./pending-uploads-db";
+import { deletePendingUpload, listPendingUploads } from "./pending-uploads-db";
 import { acquireWakeLock, reacquireWakeLockOnVisible, releaseWakeLock } from "./wake-lock";
 
 export type EntryStatus =
@@ -23,7 +23,8 @@ export type EntryStatus =
   | "processing"
   | "done"
   | "error"
-  | "unsupported";
+  | "unsupported"
+  | "cancelled";
 
 export type Entry = {
   id: string;
@@ -65,6 +66,10 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
   const [entries, setEntries] = useState<Entry[]>([]);
   const [running, setRunning] = useState(false);
   const galleryIdRef = useRef<string | null>(null);
+  // One controller per runBatch call, re-created every time -- cancelBatch always
+  // aborts whichever batch is currently in flight, including one started by the
+  // auto-resume sweep below (not just a direct runBatch call from the dropzone).
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const patchEntry = useCallback((id: string, patch: Partial<Entry>) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
@@ -134,14 +139,22 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
   }, [patchEntry]);
 
   const processOne = useCallback(
-    async (entry: Entry, batchId: string) => {
+    async (entry: Entry, batchId: string, signal: AbortSignal) => {
+      // sha256 is only known once hashing finishes -- captured here (not just inside
+      // the try block) so the catch below can clean up a resumable record even when
+      // cancellation lands mid-upload, after savePendingUpload already wrote one.
+      let sha256: string | undefined;
       try {
+        if (signal.aborted) {
+          patchEntry(entry.id, { status: "cancelled" });
+          return;
+        }
         patchEntry(entry.id, { status: "hashing" });
-        const sha256 = await hashFile(entry.file);
+        sha256 = await hashFile(entry.file);
 
         const targetGalleryId = entry.targetGalleryId !== undefined ? entry.targetGalleryId : galleryIdRef.current;
 
-        const check = await checkDuplicate(sha256, batchId, duplicateMode);
+        const check = await checkDuplicate(sha256, batchId, duplicateMode, signal);
         if (check.exists && !check.keep) {
           const galleryId = targetGalleryId;
           if (galleryId && check.assetId && isAttachEligible(check.groupId, check.isGroupPrimary)) {
@@ -160,17 +173,33 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
           // effect above once it reaches "ready") -- check.groupId/isGroupPrimary
           // describe the *original* asset, not this new one, so they don't apply here.
           patchEntry(entry.id, { status: "processing", progress: 1 });
-          const outcome = await completeDuplicate(check.storageKey!, sha256, entry.file, batchId);
+          const outcome = await completeDuplicate(check.storageKey!, sha256, entry.file, batchId, signal);
           patchEntry(entry.id, { status: "processing", progress: 1, assetId: outcome.assetId });
           return;
         }
 
         patchEntry(entry.id, { status: "uploading", progress: 0 });
-        const outcome = await uploadFile(entry.file, sha256, batchId, targetGalleryId, (fraction) =>
-          patchEntry(entry.id, { progress: fraction }),
+        const outcome = await uploadFile(
+          entry.file,
+          sha256,
+          batchId,
+          targetGalleryId,
+          (fraction) => patchEntry(entry.id, { progress: fraction }),
+          signal,
         );
         patchEntry(entry.id, { status: "processing", progress: 1, assetId: outcome.assetId });
       } catch (err) {
+        const aborted = signal.aborted || (err instanceof DOMException && err.name === "AbortError");
+        if (aborted) {
+          // Bytes already fully uploaded (status was about to become "processing")
+          // can't be un-uploaded from here, and there's no resumable record left to
+          // clean up for them either -- only a multipart upload still in progress
+          // left one in IndexedDB, which would otherwise auto-resume on next mount
+          // despite the user having just cancelled it.
+          if (sha256) await deletePendingUpload(sha256).catch(() => {});
+          patchEntry(entry.id, { status: "cancelled" });
+          return;
+        }
         patchEntry(entry.id, { status: "error", error: err instanceof Error ? err.message : String(err) });
       }
     },
@@ -209,6 +238,9 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
       setEntries((prev) => [...prev, ...newEntries]);
 
       if (supported.length === 0) return;
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       setRunning(true);
       // Only needed if at least one file in *this* batch has no per-file
@@ -254,16 +286,37 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
       let next = 0;
       async function worker() {
         for (;;) {
+          // Checked before claiming the *next* item, not just passed down to the
+          // current one -- without this, cancelling only aborted whatever each
+          // worker happened to be mid-request on, then every worker went right on
+          // claiming and starting the next queued file.
+          if (controller.signal.aborted) return;
           const i = next++;
           if (i >= queue.length) return;
-          await processOne(queue[i], batchId);
+          await processOne(queue[i], batchId, controller.signal);
         }
       }
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+      // Mark anything left untouched (still "queued") when the batch was cancelled
+      // before a worker ever reached it -- processOne only marks entries it actually
+      // started on.
+      if (controller.signal.aborted) {
+        setEntries((prev) => prev.map((e) => (e.status === "queued" ? { ...e, status: "cancelled" } : e)));
+      }
       setRunning(false);
     },
     [processOne, resolveGalleryId],
   );
+
+  /** Stops the batch currently in flight: aborts every in-progress network call
+   * (xhrPut listens for this on the same signal) and lets each worker's loop and
+   * processOne's own catch block mark entries "cancelled" rather than "error" --
+   * see the comments at both call sites for why this doesn't just setEntries([])
+   * directly (an in-flight multipart upload left in IndexedDB would otherwise
+   * auto-resume on next mount despite having just been cancelled). */
+  const cancelBatch = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   // Auto-resume sweep, once per mount: picks up any multipart upload that was left
   // in IndexedDB by a previous session of this same component -- the tab getting
@@ -288,5 +341,5 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately mount-only.
   }, []);
 
-  return { entries, running, runBatch };
+  return { entries, running, runBatch, cancelBatch };
 }
