@@ -24,11 +24,22 @@ function buildCsp(nonce: string) {
     "style-src 'self' 'unsafe-inline'",
     // cdn.* serves every public photo/video derivative; tile.openstreetmap.org is the
     // gallery map's tile source (src/components/gallery-map.tsx); data:/blob: cover
-    // LQIP placeholders and client-generated preview URLs.
-    "img-src 'self' https://cdn.mosamianphotography.com https://*.tile.openstreetmap.org data: blob:",
+    // LQIP placeholders and client-generated preview URLs. B2_ENDPOINT covers the
+    // studio library grid (api/library/route.ts), which thumbnails via a presigned B2
+    // URL directly rather than the public cdn proxy -- same gap as connect-src/
+    // media-src below, just for <img> instead of XHR/<video>.
+    `img-src 'self' https://cdn.mosamianphotography.com https://*.tile.openstreetmap.org data: blob: ${process.env.B2_ENDPOINT ?? ""}`,
     "font-src 'self' data:",
-    "media-src 'self' https://cdn.mosamianphotography.com",
-    "connect-src 'self' https://challenges.cloudflare.com",
+    // Video playback (lightbox.tsx) uses a presigned B2 URL straight from
+    // presignGetUrl, the same class of gap as connect-src below -- the <video> tag
+    // itself was never blocked, only every attempt to actually play one.
+    `media-src 'self' https://cdn.mosamianphotography.com ${process.env.B2_ENDPOINT ?? ""}`,
+    // Uploads PUT directly from the browser to a presigned B2 URL (upload-lib.ts's
+    // xhrPut), bypassing this app entirely for the actual bytes -- connect-src governs
+    // fetch/XHR targets same as any other request, so without B2's own endpoint here
+    // every upload failed outright with a CSP-blocked "network error during upload",
+    // indistinguishable from a real network failure until checked against this file.
+    `connect-src 'self' https://challenges.cloudflare.com ${process.env.B2_ENDPOINT ?? ""}`,
     "frame-src https://challenges.cloudflare.com",
     "object-src 'none'",
     "base-uri 'self'",
