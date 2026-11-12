@@ -53,6 +53,14 @@ function createClient(maxSockets: number) {
     },
     forcePathStyle: true,
     maxAttempts: 5,
+    // Since early 2025 the SDK computes a CRC32 for every PutObject/UploadPart by
+    // default, presigned URLs included -- where it can only checksum the empty body
+    // it has at signing time (x-amz-checksum-crc32=AAAAAA==). B2 ignores that; S3 and
+    // stricter S3-compatible stores reject the browser's real upload as a mismatch
+    // (found by the e2e tests against SeaweedFS). Only compute checksums when an
+    // operation requires one; uploads are verified by the worker's own sha256 check.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
     requestHandler: new NodeHttpHandler({
       connectionTimeout: 10_000,
       requestTimeout: 120_000,

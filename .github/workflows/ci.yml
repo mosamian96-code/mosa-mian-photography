@@ -69,9 +69,11 @@ jobs:
       DATABASE_URL: postgres://mmp:mmp@localhost:5432/mmp
       REDIS_URL: redis://localhost:6379
       AUTH_SECRET: ci-only-auth-secret-not-used-anywhere-else-0123456789
-      # The page origin: the storage bucket's CORS rule (e2e/seed.ts) must match it exactly.
-      AUTH_URL: http://127.0.0.1:3000
-      E2E_BASE_URL: http://127.0.0.1:3000
+      # The page origin: the storage bucket's CORS rule (e2e/seed.ts) must match it
+      # exactly. localhost, not 127.0.0.1: without a proxy in front, Next builds its own
+      # redirect URLs as localhost:3000, and the CSP treats the two as different origins.
+      AUTH_URL: http://localhost:3000
+      E2E_BASE_URL: http://localhost:3000
       AUTH_TRUST_HOST: "true"
       ADMIN_EMAIL: e2e@example.com
       # SeaweedFS stands in for Backblaze B2 (MinIO no longer publishes images).
