@@ -41,6 +41,15 @@ services:
       redis:
         condition: service_healthy
     command: npx tsx src/worker/index.ts
+    # Image processing saturates every core and can spike past 1.5 GB (heic-convert's
+    # WASM decoder especially). On this 2-core/4 GB box that starved the website and
+    # got processes OOM-killed. cpu_shares only matters under contention -- an idle
+    # site still lets the worker use every core -- but the app and database win
+    # whenever both want CPU. mem_limit makes a spike kill only this container
+    # (restart: unless-stopped brings it back, and BullMQ retries the job) instead of
+    # the kernel picking a victim, which could be the website.
+    cpu_shares: 256
+    mem_limit: 1800m
 
   postgres:
     image: postgres:16-alpine
