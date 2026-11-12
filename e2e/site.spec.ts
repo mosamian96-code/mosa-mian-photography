@@ -45,7 +45,16 @@ test.describe.serial("site", () => {
     await page.locator('input[type="file"]').setInputFiles(dir);
 
     // Upload, then the worker's processing -- the thumbnail only exists once both finish.
-    await expectImageLoaded(page.locator('img[src*="/derivatives/"]').first());
+    const thumbnail = page.locator('img[src*="/derivatives/"]').first();
+    try {
+      await expect(thumbnail).toBeVisible({ timeout: 90_000 });
+    } catch {
+      // The upload dialog's per-file status ("network error during upload", ...) and
+      // the console say why; without them a failure here is just "not found".
+      const pageText = (await page.locator("body").innerText().catch(() => "")).slice(0, 1500);
+      throw new Error(`No thumbnail after 90s.\n\nConsole errors:\n${errors.join("\n") || "(none)"}\n\nPage:\n${pageText}`);
+    }
+    await expectImageLoaded(thumbnail);
     expect(errors).toEqual([]);
   });
 
