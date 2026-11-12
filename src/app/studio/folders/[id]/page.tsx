@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { startDownload } from "@/app/studio/start-download";
 import { UploadDropzone } from "@/app/studio/upload/upload-dropzone";
 
 type Folder = {
@@ -32,7 +33,7 @@ export default function FolderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     const [foldersRes, galleriesRes] = await Promise.all([
       fetch("/api/folders").then((r) => r.json()),
       fetch(`/api/galleries?folderId=${id}`).then((r) => r.json()),
@@ -40,13 +41,12 @@ export default function FolderDetailPage() {
     setFolder(foldersRes.items.find((f: Folder) => f.id === id) ?? null);
     setSubfolders(foldersRes.items.filter((f: Folder) => f.parentId === id));
     setGalleries(galleriesRes.items);
-  }
+  }, [id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/id-change; setState happens in load()'s async continuation, not synchronously here.
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [load]);
 
   async function createSubfolder(e: React.FormEvent) {
     e.preventDefault();
@@ -99,7 +99,7 @@ export default function FolderDetailPage() {
     const gallery = await res.json();
     load();
     return gallery.id as string;
-  }, [newGalleryTitle, id]);
+  }, [newGalleryTitle, id, load]);
 
   async function deleteFolder() {
     if (!folder) return;
@@ -127,7 +127,7 @@ export default function FolderDetailPage() {
             type="button"
             onClick={() => {
               if (window.confirm(`Download every photo in "${folder.title}" (including nested folders) as a zip?`)) {
-                window.location.href = `/api/folders/${id}/download-zip`;
+                startDownload(`/api/folders/${id}/download-zip`);
               }
             }}
             className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"

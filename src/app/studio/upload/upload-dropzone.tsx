@@ -99,7 +99,7 @@ export function UploadDropzone({
   // a mobile connection hiccup mid-batch) instead of staying skewed by a slow start
   // or a burst at the beginning.
   const progressHistoryRef = useRef<{ t: number; bytes: number }[]>([]);
-  const [transferStats, setTransferStats] = useState<{ etaLabel: string; bytesPerSec: number } | null>(null);
+  const [sampledStats, setSampledStats] = useState<{ etaLabel: string; bytesPerSec: number } | null>(null);
   // Locked once a batch actually starts -- runBatch already captured whatever
   // duplicateMode was current at that moment (useUploader's hook argument), so
   // changing the toggle mid-upload would silently do nothing for files already
@@ -180,30 +180,48 @@ export function UploadDropzone({
     else if (e.status !== "queued" && e.status !== "hashing") bytesDone += e.file.size;
   }
 
+  // Sampled on a steady 1-second clock rather than on every progress event, which
+  // fire dozens of times a second across concurrent uploads -- recomputing (and
+  // re-rendering) the ETA on each one was wasted work. The latest counters are read
+  // through a ref so the interval doesn't restart on every tick.
+  const transferring = bytesTotal > 0 && bytesDone < bytesTotal;
+  const bytesRef = useRef({ done: bytesDone, total: bytesTotal });
   useEffect(() => {
-    const now = Date.now();
-    const history = progressHistoryRef.current;
-    history.push({ t: now, bytes: bytesDone });
-    while (history.length > 1 && now - history[0].t > 8000) history.shift();
+    bytesRef.current = { done: bytesDone, total: bytesTotal };
+  });
 
-    if (bytesTotal === 0 || bytesDone >= bytesTotal) {
-      progressHistoryRef.current = [];
-      setTransferStats(null);
-      return;
-    }
-    const oldest = history[0];
-    const elapsedSec = (now - oldest.t) / 1000;
-    const bytesInWindow = bytesDone - oldest.bytes;
-    if (elapsedSec < 1 || bytesInWindow <= 0) {
-      setTransferStats((prev) => prev ?? { etaLabel: "calculating…", bytesPerSec: 0 });
-      return;
-    }
-    const bytesPerSec = bytesInWindow / elapsedSec;
-    setTransferStats({ etaLabel: formatEta((bytesTotal - bytesDone) / bytesPerSec), bytesPerSec });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on
-    // the byte counters, not `entries` itself, so this doesn't re-run (and re-sample
-    // the timing window) on metadata-only changes that don't move any bytes.
-  }, [bytesDone, bytesTotal]);
+  useEffect(() => {
+    if (!transferring) return;
+    const history = progressHistoryRef.current;
+    const sample = () => {
+      const now = Date.now();
+      const { done, total } = bytesRef.current;
+      history.push({ t: now, bytes: done });
+      while (history.length > 1 && now - history[0].t > 8000) history.shift();
+      const oldest = history[0];
+      const elapsedSec = (now - oldest.t) / 1000;
+      const bytesInWindow = done - oldest.bytes;
+      if (elapsedSec < 1 || bytesInWindow <= 0) {
+        // The first sample of a new batch replaces the previous batch's final ETA;
+        // later empty windows (a brief stall) keep showing the last real estimate.
+        const calculating = { etaLabel: "calculating…", bytesPerSec: 0 };
+        const isFirstSample = history.length === 1;
+        setSampledStats((prev) => (isFirstSample ? calculating : (prev ?? calculating)));
+        return;
+      }
+      const bytesPerSec = bytesInWindow / elapsedSec;
+      setSampledStats({ etaLabel: formatEta((total - done) / bytesPerSec), bytesPerSec });
+    };
+    const firstSample = setTimeout(sample, 0);
+    const interval = setInterval(sample, 1000);
+    return () => {
+      clearTimeout(firstSample);
+      clearInterval(interval);
+      history.length = 0;
+    };
+  }, [transferring]);
+
+  const transferStats = transferring ? sampledStats : null;
 
   return (
     <div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { startDownload } from "@/app/studio/start-download";
 
 type Item = { assetId: string; filename: string; thumbUrl: string | null };
 
@@ -100,7 +101,7 @@ export function StudioLightbox({
   function download() {
     if (!current) return;
     if (!window.confirm("Download the original file for this photo?")) return;
-    window.location.href = `/api/library/${current.assetId}/download`;
+    startDownload(`/api/library/${current.assetId}/download`);
   }
 
   async function deletePhoto() {

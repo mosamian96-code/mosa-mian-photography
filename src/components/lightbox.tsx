@@ -159,8 +159,9 @@ export default function Lightbox({
 }) {
   const [slideshowOn, setSlideshowOn] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoLoading, setVideoLoading] = useState(false);
+  // Tagged with the asset it belongs to, so stepping from one video to the next can't
+  // briefly play the previous video's URL while the new one is still being fetched.
+  const [video, setVideo] = useState<{ assetId: string; url: string } | null>(null);
   const touchStartX = useRef<number | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
@@ -247,21 +248,21 @@ export default function Lightbox({
   }
 
   const current = images[index];
+  const videoUrl = video?.assetId === current.assetId ? video.url : null;
 
   useEffect(() => {
-    if (current.kind !== "video") {
-      setVideoUrl(null);
-      return;
-    }
-
-    setVideoLoading(true);
-    fetch(`/api/public/video-url?galleryId=${publicDownload?.galleryId}&assetId=${current.assetId}`)
+    if (current.kind !== "video") return;
+    const assetId = current.assetId;
+    let cancelled = false;
+    fetch(`/api/public/video-url?galleryId=${publicDownload?.galleryId}&assetId=${assetId}`)
       .then((r) => r.json())
-      .then((data) => {
-        if (data.url) setVideoUrl(data.url);
+      .then((data: { url?: string }) => {
+        if (!cancelled && data.url) setVideo({ assetId, url: data.url });
       })
-      .catch(() => setVideoUrl(null))
-      .finally(() => setVideoLoading(false));
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [current.assetId, current.kind, publicDownload?.galleryId]);
 
   return (

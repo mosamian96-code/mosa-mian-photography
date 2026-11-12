@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -15,12 +15,6 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  useEffect(() => {
-    if (!token || !email) {
-      setError("Invalid or missing reset link");
-    }
-  }, [token, email]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,7 +49,7 @@ export default function ResetPasswordPage() {
       setSuccess(true);
       setLoading(false);
       setTimeout(() => router.push("/studio/login"), 2000);
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.");
       setLoading(false);
     }

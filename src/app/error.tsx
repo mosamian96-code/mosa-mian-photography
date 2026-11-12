@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 /** Next.js's per-segment error boundary -- catches a thrown error anywhere in a page's
@@ -36,12 +37,12 @@ export default function ErrorBoundary({ error, reset }: { error: Error & { diges
         >
           Try again
         </button>
-        <a
+        <Link
           href="/"
           className="rounded bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-700"
         >
           Back to the homepage
-        </a>
+        </Link>
       </div>
     </main>
   );

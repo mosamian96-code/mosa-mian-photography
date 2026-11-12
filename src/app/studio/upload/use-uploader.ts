@@ -203,7 +203,7 @@ export function useUploader(resolveGalleryId?: () => Promise<string | null>, dup
         patchEntry(entry.id, { status: "error", error: err instanceof Error ? err.message : String(err) });
       }
     },
-    [patchEntry],
+    [patchEntry, duplicateMode],
   );
 
   const runBatch = useCallback(

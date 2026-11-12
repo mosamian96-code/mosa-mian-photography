@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ClientLinksSection } from "./client-links";
 import { GallerySettingsModal } from "./gallery-settings-modal";
 import { StudioLightbox } from "./studio-lightbox";
+import { startDownload } from "@/app/studio/start-download";
 import { UploadDropzone } from "@/app/studio/upload/upload-dropzone";
 
 type Gallery = {
@@ -177,7 +178,7 @@ export default function GalleryEditorPage() {
   function bulkDownload() {
     if (bulkSelected.size === 0) return;
     if (!window.confirm(`Download ${bulkSelected.size} photo(s) as a zip?`)) return;
-    window.location.href = `/api/library/download-zip?ids=${[...bulkSelected].join(",")}&name=${gallery?.slug ?? "photos"}`;
+    startDownload(`/api/library/download-zip?ids=${[...bulkSelected].join(",")}&name=${gallery?.slug ?? "photos"}`);
   }
 
   function downloadGalleryZip() {
@@ -188,7 +189,7 @@ export default function GalleryEditorPage() {
     // refused outright before the request reached the app at all. The server
     // resolves gallery items itself now, same as the public download route already
     // did, so this URL stays small regardless of how many photos are in it.
-    window.location.href = `/api/library/download-zip?galleryId=${gallery.id}&name=${gallery.slug}`;
+    startDownload(`/api/library/download-zip?galleryId=${gallery.id}&name=${gallery.slug}`);
   }
 
   async function deleteGallery() {

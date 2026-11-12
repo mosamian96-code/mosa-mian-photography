@@ -30,7 +30,7 @@ export default function ForgotPasswordPage() {
 
       setSubmitted(true);
       setLoading(false);
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.");
       setLoading(false);
     }
@@ -42,9 +42,9 @@ export default function ForgotPasswordPage() {
         <div className="w-full max-w-md rounded bg-neutral-800 p-8">
           <h1 className="mb-2 text-2xl font-bold text-white">Check your email</h1>
           <p className="mb-6 text-neutral-300">
-            We've sent a password reset link to <strong>{email}</strong>. Click the link in your email to reset your password.
+            We&apos;ve sent a password reset link to <strong>{email}</strong>. Click the link in your email to reset your password.
           </p>
-          <p className="text-sm text-neutral-400">The link expires in 1 hour. Check your spam folder if you don't see it.</p>
+          <p className="text-sm text-neutral-400">The link expires in 1 hour. Check your spam folder if you don&apos;t see it.</p>
           <Link href="/studio/login" className="mt-6 block text-center text-blue-400 hover:text-blue-300">
             Back to sign in
           </Link>
@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-neutral-900 px-4">
       <div className="w-full max-w-md">
         <h1 className="mb-2 text-3xl font-bold text-white">Forgot password?</h1>
-        <p className="mb-6 text-neutral-400">Enter your email and we'll send you a link to reset your password.</p>
+        <p className="mb-6 text-neutral-400">Enter your email and we&apos;ll send you a link to reset your password.</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <input

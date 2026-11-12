@@ -34,6 +34,9 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           <p style={{ marginTop: "0.75rem", maxWidth: "26rem", fontSize: "0.9rem", color: "#737373" }}>
             It&apos;s been logged. Please reload the page.
           </p>
+          {/* A full page load on purpose: the root layout just crashed, so the client
+              router that <Link> depends on can't be trusted. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/"
             style={{

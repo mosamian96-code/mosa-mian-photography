@@ -259,7 +259,7 @@ export function GallerySettingsModal({
               <div className="space-y-4">
                 <div>
                   <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                    Select which photo is your gallery's cover. The next photo in sort order becomes the hover image.
+                    Select which photo is your gallery&apos;s cover. The next photo in sort order becomes the hover image.
                   </p>
                 </div>
                 {!loadingItems && galleryItems.length === 0 ? (
@@ -286,6 +286,7 @@ export function GallerySettingsModal({
                         }`}
                         title={item.filename}
                       >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={
                             item.thumbUrl ||
