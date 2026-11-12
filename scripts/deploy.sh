@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Deploys the latest master to this server, rolling back automatically if the new
-# version fails its health check.
+# version fails.
 #
 # Usage: scripts/deploy.sh [service ...]      (default: app worker)
 #
-# New images are built while the current containers keep serving, so a failed
-# build never touches the running site (set -e stops before anything is swapped).
-# After the swap, the app must answer /api/health and the homepage, and the worker
-# must log its startup line; a changed caddy/Caddyfile must pass validation before
-# it's hot-reloaded. If any of that fails, the previous images, commit, and Caddy
-# config are restored and an alert email goes out.
+# New images are built while the current containers keep serving, so a failed build
+# never touches the running site (set -e stops before anything is swapped). Database
+# migrations then run before the swap, so new code never starts against an old
+# schema (they must stay compatible with the version still serving). After the swap,
+# the app must answer /api/health and the homepage, and the worker must log its
+# startup line; a changed caddy/Caddyfile must pass validation before it's
+# hot-reloaded. If any of that fails, the previous images, commit, and Caddy config
+# are restored and an alert email goes out.
 #
 # HEALTH_URL overrides the health endpoint, e.g. to exercise the rollback path
 # against a URL that 404s.
@@ -41,6 +43,34 @@ worker_healthy() {
   return 1
 }
 
+# Restores the previous images, commit, and Caddy config. Reads main()'s locals
+# (bash functions see their caller's variables).
+rollback() {
+  local reason="$1" s
+  echo "$reason -- rolling back to ${prev_commit:0:7}"
+  for s in "${services[@]}"; do
+    if docker image inspect "mosa-mian-photography-$s:previous" >/dev/null 2>&1; then
+      docker tag "mosa-mian-photography-$s:previous" "mosa-mian-photography-$s:latest"
+    fi
+  done
+  # This checkout exists only to deploy from, so resetting it keeps `git log` here
+  # matching what's actually running.
+  git reset -q --hard "$prev_commit"
+  docker compose up -d --no-build "${services[@]}"
+  if [ -n "$caddy_changed" ]; then
+    docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
+  fi
+
+  local verdict="the previous version is back up"
+  app_healthy "$SITE/api/health" || verdict="WARNING: the previous version is not answering its health check either"
+  echo "rolled back -- $verdict"
+  "$repo/scripts/alert.sh" "🔴 Deploy rolled back" "A deploy failed and was rolled back automatically.
+
+Reason: $reason
+Rolled back to: ${prev_commit:0:7}
+Result: $verdict" || true
+}
+
 # Everything runs inside main(): `git pull` can rewrite this very file mid-deploy,
 # and bash reads scripts incrementally, but parses a function body in full first.
 main() {
@@ -54,7 +84,7 @@ main() {
   local services=("$@")
   [ ${#services[@]} -eq 0 ] && services=(app worker)
 
-  local prev_commit s
+  local prev_commit s caddy_changed=""
   prev_commit="$(git rev-parse HEAD)"
   for s in "${services[@]}"; do
     if docker image inspect "mosa-mian-photography-$s:latest" >/dev/null 2>&1; then
@@ -66,14 +96,21 @@ main() {
   git pull -q --ff-only
   echo "deploying $(git log -1 --format='%h %s') -> ${services[*]}"
 
-  docker compose build -q "${services[@]}"
+  docker compose build -q "${services[@]}" migrate
+
+  if ! docker compose run --rm migrate >/tmp/mmp-migrate.log 2>&1; then
+    cat /tmp/mmp-migrate.log
+    rollback "database migration failed"
+    return 1
+  fi
+
   local started
   started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   docker compose up -d --no-build "${services[@]}"
 
-  local failure="" caddy_changed=""
   # Caddy's config ships with the code. `up` recreates the container only if its
   # compose definition changed; a changed Caddyfile is validated, then hot-reloaded.
+  local failure=""
   docker compose up -d --no-build caddy
   if ! git diff --quiet "$prev_commit" HEAD -- caddy/; then
     caddy_changed=1
@@ -92,34 +129,11 @@ main() {
     esac
   done
 
-  if [ -z "$failure" ]; then
-    echo "deploy OK: $(git rev-parse --short HEAD)"
-    return 0
+  if [ -n "$failure" ]; then
+    rollback "$failure"
+    return 1
   fi
-
-  echo "$failure -- rolling back to ${prev_commit:0:7}"
-  for s in "${services[@]}"; do
-    if docker image inspect "mosa-mian-photography-$s:previous" >/dev/null 2>&1; then
-      docker tag "mosa-mian-photography-$s:previous" "mosa-mian-photography-$s:latest"
-    fi
-  done
-  # This checkout exists only to deploy from, so resetting it keeps `git log` here
-  # matching what's actually running.
-  git reset -q --hard "$prev_commit"
-  docker compose up -d --no-build "${services[@]}"
-  if [ -n "$caddy_changed" ]; then
-    docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
-  fi
-
-  local verdict="the previous version is back up"
-  app_healthy "$SITE/api/health" || verdict="WARNING: the previous version is not answering its health check either"
-  echo "rolled back -- $verdict"
-  "$repo/scripts/alert.sh" "🔴 Deploy rolled back" "A deploy failed its health check and was rolled back automatically.
-
-Reason: $failure
-Rolled back to: ${prev_commit:0:7}
-Result: $verdict" || true
-  return 1
+  echo "deploy OK: $(git rev-parse --short HEAD)"
 }
 
 main "$@"

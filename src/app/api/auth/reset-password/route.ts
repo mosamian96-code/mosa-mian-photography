@@ -1,7 +1,8 @@
-import { scryptSync, randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import { users, passwordResetTokens } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { logError } from "@/lib/error-log";
+import { hashPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
 
@@ -30,17 +31,13 @@ export async function POST(request: Request) {
       return Response.json({ error: "Token expired" }, { status: 400 });
     }
 
-    const salt = randomBytes(32);
-    const hash = scryptSync(newPassword, salt, 64);
-    const passwordHash = `${salt.toString("hex")}:${hash.toString("hex")}`;
-
-    await db.update(users).set({ passwordHash }).where(eq(users.email, email));
+    await db.update(users).set({ passwordHash: hashPassword(newPassword) }).where(eq(users.email, email));
 
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.token, token));
 
     return Response.json({ success: true });
   } catch (error) {
-    console.error("Reset password error:", error);
+    await logError("reset-password", error);
     return Response.json({ error: "Failed to reset password" }, { status: 500 });
   }
 }

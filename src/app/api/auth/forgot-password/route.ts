@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { users, passwordResetTokens } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { logError } from "@/lib/error-log";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
 
     return Response.json({ success: true });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    await logError("forgot-password", error);
     return Response.json({ error: "Failed to send reset email" }, { status: 500 });
   }
 }
