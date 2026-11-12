@@ -10,7 +10,11 @@
 mosamianphotography.com, www.mosamianphotography.com {
 	tls /certs/origin-cert.pem /certs/origin-key.pem
 
-	reverse_proxy app:3000
+	# lb_try_duration holds a request for up to 30s while the app container restarts
+	# during a deploy, so visitors see a brief pause instead of a 502.
+	reverse_proxy app:3000 {
+		lb_try_duration 30s
+	}
 
 	encode zstd gzip
 
@@ -47,6 +51,8 @@ cdn.mosamianphotography.com {
 	# whole time. handle_response is the actual documented mechanism for
 	# conditioning on the proxied response's status.
 	reverse_proxy app:3000 {
+		lb_try_duration 30s
+
 		# The app's own route (src/app/api/cdn/[...key]/route.ts) already sets
 		# Cache-Control: immutable on a real 200 -- only the error path needs
 		# touching here, so this only overrides on 4xx/5xx rather than also
