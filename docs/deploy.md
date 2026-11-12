@@ -43,7 +43,7 @@ Cloudflare → SSL/TLS → Origin Server → **Create Certificate**. Accept the 
 ```
 
 This is why Caddy doesn't need Let's Encrypt here — Cloudflare already trusts this cert, and
-"Full (strict)" means Cloudflare *requires* the origin to present one. The `Caddyfile` in this
+"Full (strict)" means Cloudflare *requires* the origin to present one. `caddy/Caddyfile` in this
 repo is already pointed at `mosamianphotography.com` and `www.mosamianphotography.com` — no
 edit needed there.
 

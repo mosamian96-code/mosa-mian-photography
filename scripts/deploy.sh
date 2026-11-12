@@ -7,8 +7,9 @@
 # New images are built while the current containers keep serving, so a failed
 # build never touches the running site (set -e stops before anything is swapped).
 # After the swap, the app must answer /api/health and the homepage, and the worker
-# must log its startup line. If either check fails, the previous images and commit
-# are restored and an alert email goes out.
+# must log its startup line; a changed caddy/Caddyfile must pass validation before
+# it's hot-reloaded. If any of that fails, the previous images, commit, and Caddy
+# config are restored and an alert email goes out.
 #
 # HEALTH_URL overrides the health endpoint, e.g. to exercise the rollback path
 # against a URL that 404s.
@@ -70,13 +71,25 @@ main() {
   started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   docker compose up -d --no-build "${services[@]}"
 
-  local failure=""
+  local failure="" caddy_changed=""
+  # Caddy's config ships with the code. `up` recreates the container only if its
+  # compose definition changed; a changed Caddyfile is validated, then hot-reloaded.
+  docker compose up -d --no-build caddy
+  if ! git diff --quiet "$prev_commit" HEAD -- caddy/; then
+    caddy_changed=1
+    if docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+      docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+    else
+      failure="caddy/Caddyfile failed validation"
+    fi
+  fi
+
   for s in "${services[@]}"; do
+    [ -n "$failure" ] && break
     case "$s" in
       app) app_healthy || failure="app failed its health check ($HEALTH_URL)" ;;
       worker) worker_healthy "$started" || failure="worker never logged its startup line" ;;
     esac
-    [ -n "$failure" ] && break
   done
 
   if [ -z "$failure" ]; then
@@ -94,6 +107,9 @@ main() {
   # matching what's actually running.
   git reset -q --hard "$prev_commit"
   docker compose up -d --no-build "${services[@]}"
+  if [ -n "$caddy_changed" ]; then
+    docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
+  fi
 
   local verdict="the previous version is back up"
   app_healthy || verdict="WARNING: the previous version is not answering its health check either"

@@ -105,7 +105,10 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The directory, not the single file: git replaces a file on pull (a new inode),
+      # and a single-file bind mount keeps showing the old one until the container
+      # restarts, so `caddy reload` silently re-read stale config.
+      - ./caddy:/etc/caddy:ro
       - ./certs:/certs:ro
       - caddy_data:/data
       - caddy_config:/config

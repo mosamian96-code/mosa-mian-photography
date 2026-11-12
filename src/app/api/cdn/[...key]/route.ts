@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // section 5: "public via Cloudflare, immutable, 1 year cache"). B2 has no per-prefix
 // ACL, only bucket-wide public/private, and originals must never be public -- so this
 // route holds the B2 credentials server-side and Cloudflare caches its response at the
-// edge instead. cdn.mosamianphotography.com points at this same app (see Caddyfile).
+// edge instead. cdn.mosamianphotography.com points at this same app (see caddy/Caddyfile).
 const ALLOWED_PREFIXES = ["derivatives/", "watermarked/"];
 
 const CONTENT_TYPES: Record<string, string> = {
