@@ -74,15 +74,14 @@ export async function POST(req: NextRequest) {
   // already catches the common case before either request gets here, so it's an
   // acceptable tradeoff for a feature that only exists because uniqueness had to go.
   let assetId: string;
-  let initialStatus: string;
+  let created = false;
 
   const existing = forceNewCopy
     ? null
-    : await db.query.assets.findFirst({ where: eq(assets.sha256, sha256), columns: { id: true, status: true } });
+    : await db.query.assets.findFirst({ where: eq(assets.sha256, sha256), columns: { id: true } });
 
   if (existing) {
     assetId = existing.id;
-    initialStatus = existing.status;
   } else {
     const [inserted] = await db
       .insert(assets)
@@ -97,17 +96,24 @@ export async function POST(req: NextRequest) {
         storageKey,
         status: "pending",
       })
-      .returning({ id: assets.id, status: assets.status });
+      .returning({ id: assets.id });
     assetId = inserted.id;
-    initialStatus = inserted.status;
+    created = true;
   }
 
-  const deduped = initialStatus !== "pending";
+  // Only a newly created row gets an ingest job. An existing one already has its job
+  // (still pending or processing) or has finished. This used to re-queue any existing
+  // row still "pending" -- so the same photo uploaded twice before the first copy was
+  // processed (one file twice in a drop, or the same files dropped again mid-batch)
+  // got a second job, and the worker processed it twice. 21 photos in the queue had
+  // duplicate jobs when this was found.
+  const deduped = !created;
 
   if (deduped) {
-    // Already fully ingested previously — nothing more will happen for this file, so
-    // it counts toward the batch's completed total right away. A non-deduped file's
-    // completedFiles increment happens when the worker actually finishes ingesting it.
+    // Already in the library (processed, or with its own job still queued), so nothing
+    // more happens for this upload and it counts toward the batch's completed total
+    // right away -- the same as /api/upload/check does for duplicates it catches. A
+    // newly created file's completedFiles increment happens when the worker finishes it.
     if (batchId) {
       await db
         .update(importBatches)
