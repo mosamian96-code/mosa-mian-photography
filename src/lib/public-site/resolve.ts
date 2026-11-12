@@ -8,7 +8,7 @@ type Gallery = typeof galleries.$inferSelect;
 
 export type FolderSection = {
   folder: Folder;
-  galleries: (Gallery & {
+  galleries: (Omit<Gallery, "passwordHash"> & {
     coverUrl: string | null;
     coverLqip: string | null;
     coverAspect: number;
@@ -124,29 +124,33 @@ async function loadFolderSection(folder: Folder): Promise<FolderSection> {
         });
         const hoverAssetId = leadItems.find((it) => it.assetId !== coverAssetId)?.assetId;
 
+        // "1200", not "400": these cover cards render across 1/2 to 1/4 of the page
+        // width (folder-section-grid.tsx's 2/3/4-column grid), easily 300-450 CSS px,
+        // which needed 600-900px of actual source on any retina display. Watermarked
+        // galleries get watermarked covers; without the filter, either version could
+        // come back.
+        const cardImage = (assetId: string) =>
+          db.query.derivatives.findFirst({
+            where: and(
+              eq(derivatives.assetId, assetId),
+              eq(derivatives.variant, "1200"),
+              eq(derivatives.format, "webp"),
+              eq(derivatives.watermarked, Boolean(gallery.watermarkId)),
+            ),
+          });
         const [coverAsset, coverDerivative, hoverDerivative] = await Promise.all([
           coverAssetId
             ? db.query.assets.findFirst({ where: eq(assets.id, coverAssetId), columns: { lqip: true, width: true, height: true } })
             : null,
-          // "1200", not "400": these cover cards render across 1/2 to 1/4 of the page
-          // width (folder-section-grid.tsx's 2/3/4-column grid), easily 300-450 CSS
-          // px, which needed 600-900px of actual source on any retina display -- the
-          // 400px derivative was stretched and soft here for the same reason the
-          // photo grid was (just fixed separately in gallery-view.tsx).
-          coverAssetId
-            ? db.query.derivatives.findFirst({
-                where: and(eq(derivatives.assetId, coverAssetId), eq(derivatives.variant, "1200"), eq(derivatives.format, "webp")),
-              })
-            : null,
-          hoverAssetId
-            ? db.query.derivatives.findFirst({
-                where: and(eq(derivatives.assetId, hoverAssetId), eq(derivatives.variant, "1200"), eq(derivatives.format, "webp")),
-              })
-            : null,
+          coverAssetId ? cardImage(coverAssetId) : null,
+          hoverAssetId ? cardImage(hoverAssetId) : null,
         ]);
 
+        // This object is serialized into the page for every visitor. Only public
+        // galleries reach here today, but the hash shouldn't ride along if that changes.
+        const { passwordHash, ...cardFields } = gallery;
         return {
-          ...gallery,
+          ...cardFields,
           coverUrl: coverDerivative ? publicDerivativeUrl(coverDerivative.storageKey) : null,
           coverLqip: coverAsset?.lqip ?? null,
           // Falls back to 3/2 (a common landscape-photo ratio) only when width/height
@@ -177,10 +181,13 @@ export type GalleryImage = {
   iso: number | null;
   shutter: string | null;
   aperture: string | null;
+  /** Null unless the gallery's map is on -- every field here is serialized into the
+   * page for anyone who opens it, and a client's wedding at home would otherwise
+   * publish the home's exact location. */
   gpsLat: number | null;
   gpsLon: number | null;
-  storageKey: string; // Used for video playback; image urls come from derivatives
-  /** Keyed as `${format}${variant}`, e.g. "avif400", "webp2560". */
+  /** Keyed as `${format}${variant}`, e.g. "avif400", "webp2560". Empty while a
+   * watermarked gallery's watermarked versions are still being generated. */
   urls: Record<string, string>;
 };
 
@@ -213,7 +220,6 @@ export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[
       lqip: assets.lqip,
       caption: galleryItems.caption,
       capturedAt: assets.capturedAt,
-      storageKey: assets.storageKey,
     })
     .from(galleryItems)
     .innerJoin(assets, eq(assets.id, galleryItems.assetId))
@@ -229,24 +235,23 @@ export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[
   });
   const metaByAsset = new Map(metadataRows.map((m) => [m.assetId, m]));
 
-  // A gallery with a watermark assigned shows watermarked derivatives on screen
-  // (brief section 9: proofing protection); clean derivatives are laid down first and
-  // watermarked ones overlaid on top of the matching slot, so an asset whose watermark
-  // job hasn't finished yet still falls back to its clean image instead of a 404.
+  // A watermarked gallery serves only watermarked derivatives -- never the clean ones,
+  // not even as a fallback while the watermark job is still running (that photo shows
+  // its blurred placeholder until then). Its URLs carry a random per-generation token
+  // rather than the content hash (see watermarkedKey), so a visitor can't derive the
+  // clean URL from the watermarked one.
   const useWatermark = Boolean(gallery.watermarkId);
 
   return rows.map((row) => {
-    const derivativesForAsset = allDerivatives.filter((d) => d.assetId === row.assetId);
     const urls: Record<string, string> = {};
-    for (const d of derivativesForAsset.filter((d) => !d.watermarked)) {
-      urls[`${d.format}${d.variant}`] = publicDerivativeUrl(d.storageKey);
-    }
-    if (useWatermark) {
-      for (const d of derivativesForAsset.filter((d) => d.watermarked)) {
+    for (const d of allDerivatives) {
+      if (d.assetId === row.assetId && d.watermarked === useWatermark) {
         urls[`${d.format}${d.variant}`] = publicDerivativeUrl(d.storageKey);
       }
     }
     const meta = metaByAsset.get(row.assetId);
+    const camera = gallery.showCameraInfo ? meta : undefined;
+    const location = gallery.mapEnabled ? meta : undefined;
     return {
       assetId: row.assetId,
       filename: row.filename,
@@ -256,14 +261,13 @@ export async function loadGalleryImages(gallery: Gallery): Promise<GalleryImage[
       lqip: row.lqip,
       caption: row.caption,
       capturedAt: row.capturedAt?.toISOString() ?? null,
-      camera: meta?.camera ?? null,
-      lens: meta?.lens ?? null,
-      iso: meta?.iso ?? null,
-      shutter: meta?.shutter ?? null,
-      aperture: meta?.aperture ?? null,
-      gpsLat: meta?.gpsLat ?? null,
-      gpsLon: meta?.gpsLon ?? null,
-      storageKey: row.storageKey,
+      camera: camera?.camera ?? null,
+      lens: camera?.lens ?? null,
+      iso: camera?.iso ?? null,
+      shutter: camera?.shutter ?? null,
+      aperture: camera?.aperture ?? null,
+      gpsLat: location?.gpsLat ?? null,
+      gpsLon: location?.gpsLon ?? null,
       urls,
     };
   });
@@ -294,10 +298,12 @@ export async function publiclyReachableFolderIds(): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
-/** Asset ids that appear in at least one public, published gallery whose folder is
- * also publicly reachable (see publiclyReachableFolderIds) -- the visibility boundary
- * for cross-gallery browsing (keyword cloud, search). Unlisted/password/private
- * galleries never surface here; that's the whole point of "unlisted". */
+/** Asset ids that appear in at least one public, published, unwatermarked gallery
+ * whose folder is also publicly reachable (see publiclyReachableFolderIds) -- the
+ * visibility boundary for cross-gallery browsing (keyword cloud, search), which shows
+ * clean derivatives. Unlisted/password/private galleries never surface here; that's
+ * the whole point of "unlisted". A photo shown only in watermarked galleries is
+ * excluded too, or keyword pages would publish the clean version its galleries hide. */
 async function publiclyVisibleAssetIds(): Promise<string[]> {
   const reachable = await publiclyReachableFolderIds();
   const rows = await db
@@ -305,7 +311,14 @@ async function publiclyVisibleAssetIds(): Promise<string[]> {
     .from(galleryItems)
     .innerJoin(galleries, eq(galleries.id, galleryItems.galleryId))
     .innerJoin(assets, eq(assets.id, galleryItems.assetId))
-    .where(and(eq(galleries.visibility, "public"), sql`${galleries.publishedAt} is not null`, isNull(assets.deletedAt)));
+    .where(
+      and(
+        eq(galleries.visibility, "public"),
+        sql`${galleries.publishedAt} is not null`,
+        isNull(galleries.watermarkId),
+        isNull(assets.deletedAt),
+      ),
+    );
   return rows.filter((r) => reachable.has(r.folderId)).map((r) => r.assetId);
 }
 
@@ -330,9 +343,8 @@ export async function listPublicKeywords(): Promise<KeywordCount[]> {
 
 /**
  * Every publicly visible image tagged with one keyword, across all galleries --
- * a cross-gallery aggregate, not a specific gallery's controlled view, so this
- * always serves clean (never watermarked) derivatives regardless of any individual
- * gallery's watermark setting.
+ * a cross-gallery aggregate with clean derivatives, limited to photos some public,
+ * unwatermarked gallery already shows clean (see publiclyVisibleAssetIds).
  */
 export async function loadKeywordImages(keyword: string): Promise<GalleryImage[]> {
   const visibleIds = await publiclyVisibleAssetIds();
@@ -363,7 +375,6 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
       height: assets.height,
       lqip: assets.lqip,
       capturedAt: assets.capturedAt,
-      storageKey: assets.storageKey,
     })
     .from(assets)
     .where(and(inArray(assets.id, assetIds), isNull(assets.deletedAt)))
@@ -397,9 +408,9 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
       iso: meta?.iso ?? null,
       shutter: meta?.shutter ?? null,
       aperture: meta?.aperture ?? null,
-      gpsLat: meta?.gpsLat ?? null,
-      gpsLon: meta?.gpsLon ?? null,
-      storageKey: row.storageKey,
+      // Cross-gallery views have no map to justify publishing coordinates.
+      gpsLat: null,
+      gpsLon: null,
       urls,
     };
   });

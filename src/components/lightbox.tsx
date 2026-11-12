@@ -328,11 +328,13 @@ export default function Lightbox({
         {current.kind === "video" ? (
           <video
             src={videoUrl || undefined}
+            poster={pickSrc(current.urls, "2560").webp}
             controls
+            playsInline
             className="max-h-[80vh] max-w-full object-contain"
             style={{ backgroundColor: "#000" }}
           />
-        ) : (
+        ) : pickSrc(current.urls, "2560").webp ? (
           <picture className="flex max-h-[80vh] max-w-full items-center justify-center">
             {pickSrc(current.urls, "2560").avif ? <source srcSet={pickSrc(current.urls, "2560").avif} type="image/avif" /> : null}
             <img
@@ -341,6 +343,13 @@ export default function Lightbox({
               className="max-h-[80vh] max-w-full object-contain"
             />
           </picture>
+        ) : (
+          <div
+            className="flex h-[50vh] w-[min(80vw,40rem)] items-center justify-center bg-neutral-800 bg-cover bg-center"
+            style={current.lqip ? { backgroundImage: `url(${current.lqip})` } : undefined}
+          >
+            <p className="rounded bg-black/50 px-3 py-1.5 text-sm text-white/80">This photo is still being prepared.</p>
+          </div>
         )}
 
         <div

@@ -19,6 +19,11 @@ RUN npm install
 
 FROM base AS builder
 WORKDIR /app
+# ffmpeg extracts video poster frames in the worker, which runs from this stage; the
+# app's runner stage stays without it. Installed before COPY so code changes don't
+# invalidate this layer.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # DATABASE_URL etc. are not needed at build time (no static DB access in Server

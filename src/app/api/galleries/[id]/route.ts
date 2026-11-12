@@ -22,6 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .select({
       assetId: assets.id,
       filename: assets.originalFilename,
+      kind: assets.kind,
       capturedAt: assets.capturedAt,
       lqip: assets.lqip,
       position: galleryItems.position,
@@ -30,9 +31,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
     .from(galleryItems)
     .innerJoin(assets, eq(assets.id, galleryItems.assetId))
+    // The clean thumbnail only: matching the watermarked one too would return a
+    // photo with both as two rows -- the same photo twice in the grid.
     .leftJoin(
       derivatives,
-      and(eq(derivatives.assetId, assets.id), eq(derivatives.variant, "400"), eq(derivatives.format, "webp")),
+      and(
+        eq(derivatives.assetId, assets.id),
+        eq(derivatives.variant, "400"),
+        eq(derivatives.format, "webp"),
+        eq(derivatives.watermarked, false),
+      ),
     )
     .where(and(eq(galleryItems.galleryId, id), isNull(assets.deletedAt)))
     .orderBy(asc(galleryItems.position));

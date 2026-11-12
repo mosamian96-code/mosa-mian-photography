@@ -37,6 +37,7 @@ type Watermark = { id: string; name: string };
 type Item = {
   assetId: string;
   filename: string;
+  kind: string;
   thumbUrl: string | null;
 };
 
@@ -413,6 +414,13 @@ export default function GalleryEditorPage() {
                 {item.thumbUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={item.thumbUrl} alt={item.filename} className="h-full w-full object-cover" draggable={false} />
+                ) : null}
+                {item.kind === "video" ? (
+                  <span className="pointer-events-none absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/55 text-white">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </span>
                 ) : null}
                 {bulkMode ? (
                   <span

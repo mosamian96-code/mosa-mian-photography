@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import type { Job } from "bullmq";
 import { db } from "@/lib/db";
 import { assets, derivatives, watermarks } from "@/lib/db/schema";
 import { generateWatermarkedDerivatives } from "@/lib/ingest/derivative";
-import { derivativeKey, getObjectBuffer, putObject, watermarkedKey } from "@/lib/storage";
+import { deleteObject, derivativeKey, getObjectBuffer, putObject, watermarkedKey } from "@/lib/storage";
 import type { WatermarkJobData } from "@/lib/queue";
 
 /**
@@ -34,8 +35,14 @@ export async function processWatermarkJob(job: Job<WatermarkJobData>) {
     watermark.opacity,
   );
 
+  const previous = await db.query.derivatives.findMany({
+    where: and(eq(derivatives.assetId, assetId), eq(derivatives.watermarked, true)),
+    columns: { storageKey: true },
+  });
+  const token = randomUUID();
+
   for (const d of generated) {
-    const key = watermarkedKey(asset.sha256, d.variant, d.format);
+    const key = watermarkedKey(token, d.variant, d.format);
     await putObject(key, d.buffer, `image/${d.format}`);
     await db
       .insert(derivatives)
@@ -53,4 +60,8 @@ export async function processWatermarkJob(job: Job<WatermarkJobData>) {
         set: { storageKey: key, width: d.width, height: d.height },
       });
   }
+
+  // The rows now point at the new token's objects, so the previous generation's are
+  // orphans. Best-effort: a leftover just costs a little storage.
+  await Promise.all(previous.map((p) => deleteObject(p.storageKey).catch(() => {})));
 }

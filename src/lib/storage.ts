@@ -13,7 +13,10 @@ import {
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import type { Readable } from "node:stream";
+import { createHash } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { type Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 // B2 speaks the S3 API, so the generic S3 client works unmodified — this is the whole
 // reason presigned multipart upload (section 6) works without a custom B2 SDK.
@@ -131,6 +134,21 @@ export async function copyObject(fromKey: string, toKey: string) {
   );
 }
 
+/** Streams an object to a local file, hashing it on the way, without ever holding the
+ * whole thing in memory -- the ingest worker's memory cap is 1.8 GB and uploads can be
+ * videos of up to 1 GB, so buffering two at once could get the worker killed. */
+export async function downloadToFile(key: string, path: string): Promise<{ sha256: string }> {
+  const hash = createHash("sha256");
+  const hasher = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+  await pipeline(await getObjectStream(key), hasher, createWriteStream(path));
+  return { sha256: hash.digest("hex") };
+}
+
 export async function getObjectBuffer(key: string) {
   const result = await b2.send(new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }));
   const bytes = await result.Body?.transformToByteArray();
@@ -226,8 +244,13 @@ export function derivativeKey(sha256: string, variant: string, format: string) {
   return `derivatives/${sha256}/${variant}.${format}`;
 }
 
-export function watermarkedKey(sha256: string, variant: string, format: string) {
-  return `watermarked/${sha256}/${variant}.${format}`;
+/** `token` is random per generation (see process-watermark.ts), not the content hash
+ * clean derivatives are keyed by -- otherwise anyone could turn a watermarked URL into
+ * the clean one by editing "watermarked/" to "derivatives/". A fresh token on every
+ * regeneration also means a changed watermark never reuses a URL Cloudflare has
+ * cached for a year. */
+export function watermarkedKey(token: string, variant: string, format: string) {
+  return `watermarked/${token}/${variant}.${format}`;
 }
 
 /** Storage key for an admin-uploaded watermark mark image itself (not a derivative). */

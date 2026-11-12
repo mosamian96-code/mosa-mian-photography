@@ -1,9 +1,8 @@
-import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
-import { exiftool } from "exiftool-vendored";
+import { exiftool, type Tags } from "exiftool-vendored";
 import heicDecode from "heic-decode";
 import sharp from "sharp";
 import type { Job } from "bullmq";
@@ -11,8 +10,29 @@ import { db } from "@/lib/db";
 import { assetGroups, assetKeywords, assetMetadata, assets, derivatives, keywords } from "@/lib/db/schema";
 import { extOf } from "@/lib/ingest/classify";
 import { generateLqip, generatePublicDerivatives, normalizeOrientation } from "@/lib/ingest/derivative";
-import { derivativeKey, getObjectBuffer, putObject } from "@/lib/storage";
+import { extractVideoPoster } from "@/lib/ingest/video-poster";
+import { derivativeKey, downloadToFile, putObject } from "@/lib/storage";
 import type { IngestJobData } from "@/lib/queue";
+
+function toValidDate(value: unknown): Date | null {
+  if (typeof value !== "object" || value === null || !("toDate" in value) || typeof value.toDate !== "function") {
+    return null;
+  }
+  const date = (value as { toDate(): Date }).toDate();
+  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() > 1970 ? date : null;
+}
+
+/** Photos carry their capture time in EXIF DateTimeOriginal. Videos don't, so they fall
+ * back to QuickTime's CreationDate (Apple's, with time zone; not in the typed tag list)
+ * or CreateDate -- without this, every video had no capture date and sorted to the end
+ * of capture-date galleries instead of beside the photos taken at the same moment. */
+function captureDate(tags: Tags): Date | null {
+  return (
+    toValidDate(tags.DateTimeOriginal) ??
+    toValidDate((tags as Record<string, unknown>).CreationDate) ??
+    toValidDate(tags.CreateDate)
+  );
+}
 
 function normalizeKeywords(raw: string | string[] | undefined): string[] {
   if (!raw) return [];
@@ -23,13 +43,23 @@ function normalizeKeywords(raw: string | string[] | undefined): string[] {
 async function extractRasterBuffer(
   kind: string,
   tempPath: string,
-  originalBuffer: Buffer,
   containerOrientation: number | undefined,
 ): Promise<Buffer | null> {
-  if (kind === "jpeg") return originalBuffer;
   if (kind === "sidecar") return null;
+  if (kind === "jpeg") return readFile(tempPath);
+
+  if (kind === "video") {
+    // A poster frame is what the video's thumbnails and LQIP are made from. A video
+    // that ffmpeg can't read still plays (the browser decodes it, not us), so it stays
+    // ready without thumbnails rather than failing outright.
+    return extractVideoPoster(tempPath).catch((err) => {
+      console.warn(`[ingest] no poster frame for ${tempPath}:`, err instanceof Error ? err.message : err);
+      return null;
+    });
+  }
 
   if (kind === "heic") {
+    const originalBuffer = await readFile(tempPath);
     // sharp's prebuilt libvips includes libheif with AV1 only -- not HEVC, the codec
     // every iPhone HEIC uses (left out for patent reasons). It reads such a file's
     // metadata fine, then fails at decode with "Support for this compression format
@@ -72,6 +102,38 @@ async function extractRasterBuffer(
   // the rotation info only exists on the RAW container's EXIF. Bake it in here, before
   // this buffer ever reaches the derivative pipeline's own (buffer-local) auto-rotate.
   return normalizeOrientation(preview, containerOrientation);
+}
+
+/** Generates and stores the public derivative set for one raster (a photo, a RAW's
+ * embedded preview, or a video's poster frame), returning the dimensions and LQIP to
+ * record on the asset. */
+async function storeDerivatives(assetId: string, sha256: string, raster: Buffer) {
+  const generated = await generatePublicDerivatives(raster);
+  if (generated.length === 0) {
+    throw new Error("no usable preview image (RAW had no embedded JpgFromRaw/PreviewImage)");
+  }
+
+  for (const d of generated) {
+    const key = derivativeKey(sha256, d.variant, d.format);
+    await putObject(key, d.buffer, `image/${d.format}`);
+    await db
+      .insert(derivatives)
+      .values({
+        assetId,
+        variant: d.variant,
+        format: d.format,
+        width: d.width,
+        height: d.height,
+        storageKey: key,
+        watermarked: false,
+      })
+      .onConflictDoNothing();
+  }
+
+  // The 2560 AVIF (largest generated) gives the truest dimensions of what we actually
+  // derived from; fall back to whatever came back first.
+  const dims = generated.find((d) => d.variant === "2560") ?? generated[0];
+  return { width: dims.width, height: dims.height, lqip: await generateLqip(raster) };
 }
 
 async function linkSiblingsIntoGroup(assetId: string, batchId: string | undefined | null, basename: string) {
@@ -129,59 +191,23 @@ export async function processIngestJob(job: Job<IngestJobData>) {
 
   try {
     // 1. Verify object exists and its hash matches the claim (section 7 step 1).
-    const buffer = await getObjectBuffer(storageKey);
-    const actualHash = createHash("sha256").update(buffer).digest("hex");
+    const { sha256: actualHash } = await downloadToFile(storageKey, tempPath);
     if (actualHash !== sha256) {
       throw new Error(`hash mismatch: expected ${sha256}, got ${actualHash}`);
     }
-    await writeFile(tempPath, buffer);
 
     // 2. Metadata (section 7 step 2).
     const tags = await exiftool.read(tempPath);
-    const capturedAt =
-      typeof tags.DateTimeOriginal === "object" && tags.DateTimeOriginal
-        ? tags.DateTimeOriginal.toDate()
-        : null;
+    const capturedAt = captureDate(tags);
     const keywordList = normalizeKeywords(tags.Keywords ?? tags.Subject);
 
-    // 3/4. Base raster + derivatives (section 7 steps 3-4). Sidecars and videos carry no image derivatives.
-    const rasterBuffer =
-      current.kind === "video" ? null : await extractRasterBuffer(current.kind, tempPath, buffer, tags.Orientation);
-
-    let width: number | null = null;
-    let height: number | null = null;
-    let lqip: string | null = null;
-
-    if (rasterBuffer) {
-      const generated = await generatePublicDerivatives(rasterBuffer);
-      if (generated.length === 0) {
-        throw new Error("no usable preview image (RAW had no embedded JpgFromRaw/PreviewImage)");
-      }
-
-      for (const d of generated) {
-        const key = derivativeKey(sha256, d.variant, d.format);
-        await putObject(key, d.buffer, `image/${d.format}`);
-        await db
-          .insert(derivatives)
-          .values({
-            assetId,
-            variant: d.variant,
-            format: d.format,
-            width: d.width,
-            height: d.height,
-            storageKey: key,
-            watermarked: false,
-          })
-          .onConflictDoNothing();
-      }
-
-      // The 2560 AVIF (largest generated) gives the truest dimensions of what we
-      // actually derived from; fall back to whatever came back first.
-      const dims = generated.find((d) => d.variant === "2560") ?? generated[0];
-      width = dims.width;
-      height = dims.height;
-      lqip = await generateLqip(rasterBuffer);
-    }
+    // 3/4. Base raster + derivatives (section 7 steps 3-4). Sidecars carry none; a
+    // video's come from its poster frame.
+    const rasterBuffer = await extractRasterBuffer(current.kind, tempPath, tags.Orientation);
+    const stored = rasterBuffer ? await storeDerivatives(assetId, sha256, rasterBuffer) : null;
+    const width = stored?.width ?? null;
+    const height = stored?.height ?? null;
+    const lqip = stored?.lqip ?? null;
 
     // 5. LQIP already computed above (section 7 step 5).
 

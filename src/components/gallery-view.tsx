@@ -219,28 +219,30 @@ export function GalleryView({
               data-cursor="view"
               style={{ width, height, backgroundImage: image.lqip ? `url(${image.lqip})` : undefined, backgroundSize: "cover" }}
             >
-              {!isVideo ? (
-                <picture>
-                  {src.avif ? <source srcSet={src.avif} type="image/avif" /> : null}
-                  {src.webp ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={src.webp}
-                      alt={image.caption ?? image.filename}
-                      loading={isEager ? "eager" : "lazy"}
-                      fetchPriority={isEager ? "high" : undefined}
-                      className={`focus-image h-full w-full object-cover ${isEager ? "" : "opacity-0 transition-opacity duration-500 ease-out [&.is-loaded]:opacity-100"}`}
-                      onLoad={isEager ? undefined : (e) => e.currentTarget.classList.add("is-loaded")}
-                    />
-                  ) : null}
-                </picture>
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" className="text-white/50">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-              )}
+              {/* A video's derivatives are made from its poster frame, so it renders the same way. */}
+              <picture>
+                {src.avif ? <source srcSet={src.avif} type="image/avif" /> : null}
+                {src.webp ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={src.webp}
+                    alt={image.caption ?? image.filename}
+                    loading={isEager ? "eager" : "lazy"}
+                    fetchPriority={isEager ? "high" : undefined}
+                    className={`focus-image h-full w-full object-cover ${isEager ? "" : "opacity-0 transition-opacity duration-500 ease-out [&.is-loaded]:opacity-100"}`}
+                    onLoad={isEager ? undefined : (e) => e.currentTarget.classList.add("is-loaded")}
+                  />
+                ) : null}
+              </picture>
+              {isVideo ? (
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </span>
+                </span>
+              ) : null}
               <FocusFrame />
               {clientControls?.canFavorite && favorited.has(image.assetId) ? (
                 <span className="absolute right-1.5 top-1.5 text-sm text-white drop-shadow">♥</span>
