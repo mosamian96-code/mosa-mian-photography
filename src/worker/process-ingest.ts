@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { exiftool } from "exiftool-vendored";
+import sharp from "sharp";
 import type { Job } from "bullmq";
 import { db } from "@/lib/db";
 import { assetGroups, assetKeywords, assetMetadata, assets, derivatives, keywords } from "@/lib/db/schema";
@@ -24,8 +25,30 @@ async function extractRasterBuffer(
   originalBuffer: Buffer,
   containerOrientation: number | undefined,
 ): Promise<Buffer | null> {
-  if (kind === "jpeg" || kind === "heic") return originalBuffer;
+  if (kind === "jpeg") return originalBuffer;
   if (kind === "sidecar") return null;
+
+  if (kind === "heic") {
+    // Some HEIC files -- iPhone Portrait/Live Photos especially, which can bundle a
+    // depth map, several "spatial"/semantic auxiliary images, and a thumbnail all in
+    // one container -- exceed libheif's own hard, parse-time security limit on the
+    // number of iref box references (a DoS guard against maliciously crafted files,
+    // confirmed live: 42 references on a real iPhone photo vs. its limit of 16).
+    // failOn:"none" can't override this -- it throws during libheif's own box
+    // parsing, before vips' warning/error handling is even in the picture. These
+    // files still decode fine through exiftool, which parses the container more
+    // leniently, and almost always carry an ordinary embedded JPEG preview -- same
+    // fallback the RAW branch below already relies on, for the same reason.
+    try {
+      await sharp(originalBuffer, { failOn: "none" }).metadata();
+      return originalBuffer;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("Security limit exceeded")) throw err;
+      const preview = await exiftool.extractBinaryTagToBuffer("PreviewImage", tempPath);
+      return normalizeOrientation(preview, containerOrientation);
+    }
+  }
 
   // RAW: never demosaic. The camera-embedded preview carries the in-camera color
   // profile and is the right proxy (brief section 7), extracted via exiftool rather
