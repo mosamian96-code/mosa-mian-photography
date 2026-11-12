@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { exiftool } from "exiftool-vendored";
-import heicConvert from "heic-convert";
+import heicDecode from "heic-decode";
 import sharp from "sharp";
 import type { Job } from "bullmq";
 import { db } from "@/lib/db";
@@ -30,32 +30,31 @@ async function extractRasterBuffer(
   if (kind === "sidecar") return null;
 
   if (kind === "heic") {
-    // Some HEIC files -- iPhone Portrait/Live Photos especially, which can bundle a
-    // depth map, several "spatial"/semantic auxiliary images, and a thumbnail all in
-    // one container -- exceed libheif's own hard, parse-time security limit on the
-    // number of iref box references (a DoS guard against maliciously crafted files,
-    // confirmed live: 42 references on a real iPhone photo vs. its limit of 16).
-    // failOn:"none" can't override this -- it throws during libheif's own box
-    // parsing, before vips' warning/error handling is even in the picture.
-    //
-    // Unlike RAW, these files don't carry a usable embedded "PreviewImage" tag --
-    // confirmed live (exiftool just reports "PreviewImage not found") -- so the
-    // fallback here is heic-convert instead: a WASM-based libheif build (via
-    // libheif-js) that in practice doesn't enforce this limit, confirmed live
-    // against a real file that failed sharp's native decoder with this exact error.
-    // containerOrientation is applied the same as the RAW branch below, though in
-    // practice it's always 1 (a no-op) for real HEIC files -- Apple's encoder bakes
-    // rotation into the container's own irot box, which libheif/heic-convert resolves
-    // during decode, rather than via a separate EXIF orientation tag.
-    try {
-      await sharp(originalBuffer, { failOn: "none" }).metadata();
-      return originalBuffer;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (!message.includes("Security limit exceeded")) throw err;
-      const jpeg = await heicConvert({ buffer: originalBuffer, format: "JPEG", quality: 0.9 });
-      return normalizeOrientation(Buffer.from(jpeg), containerOrientation);
-    }
+    // sharp's prebuilt libvips includes libheif with AV1 only -- not HEVC, the codec
+    // every iPhone HEIC uses (left out for patent reasons). It reads such a file's
+    // metadata fine, then fails at decode with "Support for this compression format
+    // has not been built in". Some iPhone files (Portrait/Live Photos) also exceed
+    // libheif's parse-time limit on iref references (42 vs 16, confirmed live), which
+    // sharp refuses to open at all. heic-decode (libheif compiled to WASM) bundles an
+    // HEVC decoder and handles both; its raw pixels are encoded natively by sharp,
+    // ~2x faster than heic-convert's pure-JS JPEG encoder and without its extra lossy
+    // pass (measured on a real 2268x4032 iPhone file: 2.6s vs 4.6s).
+    const compression = await sharp(originalBuffer, { failOn: "none" })
+      .metadata()
+      .then((m) => m.compression)
+      .catch(() => undefined);
+    if (compression === "av1") return originalBuffer;
+
+    const { width, height, data } = await heicDecode({ buffer: originalBuffer });
+    const jpeg = await sharp(Buffer.from(data.buffer, data.byteOffset, data.byteLength), {
+      raw: { width, height, channels: 4 },
+    })
+      .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
+      .toBuffer();
+    // A no-op in practice: Apple bakes rotation into the container's irot box, which
+    // libheif applies during decode, and leaves the EXIF Orientation at 1. Applied
+    // anyway for consistency with the RAW branch below.
+    return normalizeOrientation(jpeg, containerOrientation);
   }
 
   // RAW: never demosaic. The camera-embedded preview carries the in-camera color
