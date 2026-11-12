@@ -1,0 +1,1 @@
+ALTER TABLE "gallery" ALTER COLUMN "map_enabled" SET DEFAULT false;

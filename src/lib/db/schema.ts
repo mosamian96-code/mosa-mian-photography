@@ -306,7 +306,9 @@ export const galleries = pgTable(
     showCameraInfo: boolean("show_camera_info").notNull().default(false),
     showFilenames: boolean("show_filenames").notNull().default(false),
     slideshowEnabled: boolean("slideshow_enabled").notNull().default(true),
-    mapEnabled: boolean("map_enabled").notNull().default(true),
+    // Off by default: the map plots each photo's GPS location, and a client gallery
+    // shot at someone's home would publish the address. Turned on per gallery.
+    mapEnabled: boolean("map_enabled").notNull().default(false),
     rightClickMessage: text("right_click_message"),
     // Combined with visibility (see generateMetadata) -- true is a no-op there since a
     // non-public gallery is already noindex regardless; this only matters as an

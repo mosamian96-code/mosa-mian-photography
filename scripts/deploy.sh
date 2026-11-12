@@ -34,10 +34,15 @@ app_healthy() {
 }
 
 worker_healthy() {
-  local since="$1" _
+  local since="$1" _ id started
   for _ in $(seq 1 30); do
-    if docker compose logs --since "$since" worker 2>/dev/null | grep -q 'listening on queue "ingest"'; then
-      return 0
+    id="$(docker compose ps -q worker)"
+    if [ -n "$id" ] && [ "$(docker inspect -f '{{.State.Running}}' "$id")" = "true" ]; then
+      started="$(docker inspect -f '{{.State.StartedAt}}' "$id")"
+      # Not restarted by this deploy (its image didn't change), so it's the worker
+      # that was already running -- a recreated one must log its startup line.
+      [[ "${started:0:19}" < "${since:0:19}" ]] && return 0
+      docker compose logs --since "$since" worker 2>/dev/null | grep -q 'listening on queue "ingest"' && return 0
     fi
     sleep 2
   done

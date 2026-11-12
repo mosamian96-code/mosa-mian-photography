@@ -99,6 +99,13 @@
       "when": 1794521878781,
       "tag": "0013_password_reset_token_table",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794526049029,
+      "tag": "0014_map_off_by_default",
+      "breakpoints": true
     }
   ]
 }
