@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { exiftool } from "exiftool-vendored";
+import heicConvert from "heic-convert";
 import sharp from "sharp";
 import type { Job } from "bullmq";
 import { db } from "@/lib/db";
@@ -35,18 +36,25 @@ async function extractRasterBuffer(
     // number of iref box references (a DoS guard against maliciously crafted files,
     // confirmed live: 42 references on a real iPhone photo vs. its limit of 16).
     // failOn:"none" can't override this -- it throws during libheif's own box
-    // parsing, before vips' warning/error handling is even in the picture. These
-    // files still decode fine through exiftool, which parses the container more
-    // leniently, and almost always carry an ordinary embedded JPEG preview -- same
-    // fallback the RAW branch below already relies on, for the same reason.
+    // parsing, before vips' warning/error handling is even in the picture.
+    //
+    // Unlike RAW, these files don't carry a usable embedded "PreviewImage" tag --
+    // confirmed live (exiftool just reports "PreviewImage not found") -- so the
+    // fallback here is heic-convert instead: a WASM-based libheif build (via
+    // libheif-js) that in practice doesn't enforce this limit, confirmed live
+    // against a real file that failed sharp's native decoder with this exact error.
+    // containerOrientation is applied the same as the RAW branch below, though in
+    // practice it's always 1 (a no-op) for real HEIC files -- Apple's encoder bakes
+    // rotation into the container's own irot box, which libheif/heic-convert resolves
+    // during decode, rather than via a separate EXIF orientation tag.
     try {
       await sharp(originalBuffer, { failOn: "none" }).metadata();
       return originalBuffer;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!message.includes("Security limit exceeded")) throw err;
-      const preview = await exiftool.extractBinaryTagToBuffer("PreviewImage", tempPath);
-      return normalizeOrientation(preview, containerOrientation);
+      const jpeg = await heicConvert({ buffer: originalBuffer, format: "JPEG", quality: 0.9 });
+      return normalizeOrientation(Buffer.from(jpeg), containerOrientation);
     }
   }
 
