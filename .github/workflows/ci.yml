@@ -44,3 +44,88 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  e2e:
+    name: Browser tests
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mmp
+          POSTGRES_PASSWORD: mmp
+          POSTGRES_DB: mmp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mmp" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://mmp:mmp@localhost:5432/mmp
+      REDIS_URL: redis://localhost:6379
+      AUTH_SECRET: ci-only-auth-secret-not-used-anywhere-else-0123456789
+      # The page origin: the storage bucket's CORS rule (e2e/seed.ts) must match it exactly.
+      AUTH_URL: http://127.0.0.1:3000
+      E2E_BASE_URL: http://127.0.0.1:3000
+      AUTH_TRUST_HOST: "true"
+      ADMIN_EMAIL: e2e@example.com
+      # SeaweedFS stands in for Backblaze B2 (MinIO no longer publishes images).
+      B2_ENDPOINT: http://localhost:8333
+      B2_KEY_ID: e2e-access
+      B2_APPLICATION_KEY: e2e-secret
+      B2_BUCKET: e2e
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Start S3-compatible storage
+        run: |
+          mkdir -p /tmp/s3cfg
+          echo '{"identities":[{"name":"e2e","credentials":[{"accessKey":"e2e-access","secretKey":"e2e-secret"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' > /tmp/s3cfg/s3.json
+          docker run -d --name s3 -p 8333:8333 -v /tmp/s3cfg:/etc/seaweed:ro chrislusf/seaweedfs:4.53 \
+            server -s3 -s3.config=/etc/seaweed/s3.json -s3.allowedOrigins="$AUTH_URL" -dir=/data
+          for i in $(seq 1 60); do curl -s -o /dev/null http://localhost:8333 && break; sleep 1; done
+
+      - name: Migrate and seed
+        run: npx drizzle-kit migrate && npx tsx e2e/seed.ts
+
+      - name: Build
+        run: |
+          npm run build
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+
+      - name: Start app and worker
+        run: |
+          (cd .next/standalone && NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 nohup node server.js > /tmp/app.log 2>&1 &)
+          nohup node --import tsx src/worker/index.ts > /tmp/worker.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf "$E2E_BASE_URL/api/health" > /dev/null && break; sleep 1; done
+          curl -s "$E2E_BASE_URL/api/health"
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Browser tests
+        run: npx playwright test
+
+      # Job logs need authentication to read; annotations don't, so failures stay
+      # diagnosable from the outside.
+      - name: Surface server logs
+        if: failure()
+        run: |
+          docker logs s3 > /tmp/s3.log 2>&1 || true
+          for f in /tmp/app.log /tmp/worker.log /tmp/s3.log; do
+            [ -s "$f" ] || continue
+            body=$(tail -c 3000 "$f" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=$(basename "$f")::$body"
+          done
