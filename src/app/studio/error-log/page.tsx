@@ -1,6 +1,7 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { assets, errorLogs, jobs } from "@/lib/db/schema";
+import { RetryButton } from "./retry-button";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,8 @@ function timeAgo(date: Date) {
 }
 
 export default async function ErrorLogPage() {
-  const [recentErrors, failedJobs, failedAssets] = await Promise.all([
+  const failedAssetFilter = and(eq(assets.status, "failed"), isNull(assets.deletedAt));
+  const [recentErrors, failedJobs, failedAssets, [{ failedTotal }]] = await Promise.all([
     db.select().from(errorLogs).orderBy(desc(errorLogs.createdAt)).limit(100),
     db
       .select({ id: jobs.id, type: jobs.type, error: jobs.error, updatedAt: jobs.updatedAt })
@@ -26,18 +28,16 @@ export default async function ErrorLogPage() {
     db
       .select({ id: assets.id, filename: assets.originalFilename, errorMessage: assets.errorMessage })
       .from(assets)
-      .where(sql`${assets.status} = 'failed'`)
+      .where(failedAssetFilter)
       .limit(50),
+    db.select({ failedTotal: count() }).from(assets).where(failedAssetFilter),
   ]);
 
   return (
     <div className="space-y-10">
       <div>
         <h1 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">Error log</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Server-side errors, most recent first. Added tonight so problems surface here instead of requiring SSH
-          access to read container logs.
-        </p>
+        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">Server-side errors, most recent first.</p>
       </div>
 
       <section>
@@ -90,19 +90,32 @@ export default async function ErrorLogPage() {
       </section>
 
       <section>
-        <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Failed assets ({failedAssets.length})</h2>
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">Failed photos ({failedTotal})</h2>
+          {failedTotal > 0 ? <RetryButton label={`Retry all ${failedTotal}`} /> : null}
+        </div>
         {failedAssets.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-400 dark:text-neutral-500">None.</p>
         ) : (
           <div className="mt-3 divide-y divide-neutral-200 rounded border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
             {failedAssets.map((a) => (
-              <div key={a.id} className="px-4 py-3 text-sm">
-                <p className="text-neutral-900 dark:text-neutral-100">{a.filename}</p>
-                {a.errorMessage ? <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{a.errorMessage}</p> : null}
+              <div key={a.id} className="flex items-start justify-between gap-4 px-4 py-3 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate text-neutral-900 dark:text-neutral-100">{a.filename}</p>
+                  {a.errorMessage ? (
+                    <p className="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{a.errorMessage}</p>
+                  ) : null}
+                </div>
+                <RetryButton assetIds={[a.id]} label="Retry" />
               </div>
             ))}
           </div>
         )}
+        {failedTotal > failedAssets.length ? (
+          <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+            Showing {failedAssets.length} of {failedTotal}. &ldquo;Retry all&rdquo; covers every one.
+          </p>
+        ) : null}
       </section>
     </div>
   );
