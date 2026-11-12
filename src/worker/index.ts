@@ -1,8 +1,8 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { exiftool } from "exiftool-vendored";
 import { Worker } from "bullmq";
 import { db } from "@/lib/db";
-import { importBatches, jobs } from "@/lib/db/schema";
+import { assets, importBatches, jobs } from "@/lib/db/schema";
 import { maybeFinalizeBatch } from "@/lib/ingest/batch";
 import { INGEST_QUEUE_NAME, WATERMARK_QUEUE_NAME, type IngestJobData, type WatermarkJobData } from "@/lib/queue";
 import { redis } from "@/lib/redis";
@@ -72,17 +72,25 @@ worker.on("completed", async (job) => {
 worker.on("failed", async (job, err) => {
   if (!job) return;
   console.error(`[ingest] job ${job.id} (asset ${job.data.assetId}) failed:`, err);
-  // BullMQ retries automatically up to the queue's configured attempts; only mark the
-  // batch/job row as failed once every attempt is exhausted.
-  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
-    await upsertJobRow(job.data, "failed", err.message);
-    if (job.data.batchId) {
-      await db
-        .update(importBatches)
-        .set({ failedFiles: sql`${importBatches.failedFiles} + 1` })
-        .where(eq(importBatches.id, job.data.batchId));
-      await maybeFinalizeBatch(job.data.batchId);
-    }
+  // Act only once BullMQ has given up; a job it will retry is back in wait/delayed.
+  // The job's state is the source of truth, not attemptsMade: a job that stalled too
+  // often (its process killed mid-job) fails as unrecoverable before reaching the
+  // attempt limit, and the old attemptsMade check skipped it.
+  if ((await job.getState()) !== "failed") return;
+  await upsertJobRow(job.data, "failed", err.message);
+  // processIngestJob marks the asset failed itself, but a job whose process died never
+  // reaches that code, which left the photo stuck at "processing" -- never failed, so
+  // never offered for retry.
+  await db
+    .update(assets)
+    .set({ status: "failed", errorMessage: err.message })
+    .where(and(eq(assets.id, job.data.assetId), ne(assets.status, "ready")));
+  if (job.data.batchId) {
+    await db
+      .update(importBatches)
+      .set({ failedFiles: sql`${importBatches.failedFiles} + 1` })
+      .where(eq(importBatches.id, job.data.batchId));
+    await maybeFinalizeBatch(job.data.batchId);
   }
 });
 

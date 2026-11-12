@@ -40,7 +40,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: npx tsx src/worker/index.ts
+    # Node directly (with tsx as a loader) behind init's signal forwarding, rather than
+    # via npx, so SIGTERM actually reaches the worker's graceful shutdown. The grace
+    # period lets in-flight photos (30-90s each) finish on deploy instead of being
+    # SIGKILLed after Docker's default 10s -- interrupted jobs that stalled twice were
+    # failing as unrecoverable and leaving photos stuck at "processing".
+    command: ["node", "--import", "tsx", "src/worker/index.ts"]
+    init: true
+    stop_grace_period: 3m
     # Image processing saturates every core and can spike past 1.5 GB (heic-convert's
     # WASM decoder especially). On this 2-core/4 GB box that starved the website and
     # got processes OOM-killed. cpu_shares only matters under contention -- an idle
