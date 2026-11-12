@@ -19,9 +19,9 @@ SITE="https://mosamianphotography.com"
 HEALTH_URL="${HEALTH_URL:-$SITE/api/health}"
 
 app_healthy() {
-  local _
+  local url="$1" _
   for _ in $(seq 1 40); do
-    if curl -fsS --max-time 5 "$HEALTH_URL" 2>/dev/null | grep -q '"ok":true' &&
+    if curl -fsS --max-time 5 "$url" 2>/dev/null | grep -q '"ok":true' &&
       curl -fsS -o /dev/null --max-time 10 "$SITE/"; then
       return 0
     fi
@@ -87,7 +87,7 @@ main() {
   for s in "${services[@]}"; do
     [ -n "$failure" ] && break
     case "$s" in
-      app) app_healthy || failure="app failed its health check ($HEALTH_URL)" ;;
+      app) app_healthy "$HEALTH_URL" || failure="app failed its health check ($HEALTH_URL)" ;;
       worker) worker_healthy "$started" || failure="worker never logged its startup line" ;;
     esac
   done
@@ -112,7 +112,7 @@ main() {
   fi
 
   local verdict="the previous version is back up"
-  app_healthy || verdict="WARNING: the previous version is not answering its health check either"
+  app_healthy "$SITE/api/health" || verdict="WARNING: the previous version is not answering its health check either"
   echo "rolled back -- $verdict"
   "$repo/scripts/alert.sh" "🔴 Deploy rolled back" "A deploy failed its health check and was rolled back automatically.
 
