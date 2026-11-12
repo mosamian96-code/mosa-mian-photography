@@ -35,22 +35,38 @@ import type { Readable } from "node:stream";
 // restart" -- a fresh connection per request costs a bit of latency but removes the
 // whole bug class. maxAttempts adds a retry safety net for any other transient
 // network blip on top of that.
-export const b2 = new S3Client({
-  region: "auto",
-  endpoint: process.env.B2_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.B2_KEY_ID!,
-    secretAccessKey: process.env.B2_APPLICATION_KEY!,
-  },
-  forcePathStyle: true,
-  maxAttempts: 5,
-  requestHandler: new NodeHttpHandler({
-    connectionTimeout: 10_000,
-    requestTimeout: 120_000,
-    httpsAgent: { keepAlive: false },
-    httpAgent: { keepAlive: false },
-  }),
-});
+//
+// maxSockets caps each client's connection pool (the SDK's default is 50). A request
+// that can't get a socket waits, then fails with "did not establish a connection
+// within the configured timeout" -- so a pool exhausted by unread response streams
+// takes down every storage call sharing it.
+function createClient(maxSockets: number) {
+  return new S3Client({
+    region: "auto",
+    endpoint: process.env.B2_ENDPOINT,
+    credentials: {
+      accessKeyId: process.env.B2_KEY_ID!,
+      secretAccessKey: process.env.B2_APPLICATION_KEY!,
+    },
+    forcePathStyle: true,
+    maxAttempts: 5,
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: 10_000,
+      requestTimeout: 120_000,
+      httpsAgent: { keepAlive: false, maxSockets },
+      httpAgent: { keepAlive: false, maxSockets },
+    }),
+  });
+}
+
+export const b2 = createClient(50);
+
+// Long-lived streaming reads (zip downloads, see zip-download.ts) get their own pool.
+// Each holds a socket for as long as a visitor takes to download a file, so they must
+// never be able to starve the short requests -- thumbnails, uploads, the health check
+// -- that share b2's pool. That starvation was the cause of the long-running "every
+// thumbnail breaks until a restart" incidents.
+const b2Streaming = createClient(20);
 
 export const B2_BUCKET = process.env.B2_BUCKET!;
 
@@ -94,9 +110,11 @@ export async function getObjectText(key: string) {
  * append each original straight into the archive instead of buffering full files in
  * memory (a gallery can run into the hundreds of originals at 10-20MB each). The SDK
  * types this as a union across environments, but running under the Node runtime
- * (declared in every route that calls this) it's always a real Node Readable. */
+ * (declared in every route that calls this) it's always a real Node Readable.
+ * The caller must read it to the end or destroy() it: an abandoned stream holds its
+ * socket indefinitely. */
 export async function getObjectStream(key: string): Promise<Readable> {
-  const result = await b2.send(new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }));
+  const result = await b2Streaming.send(new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }));
   if (!result.Body) throw new Error(`no body for ${key}`);
   return result.Body as Readable;
 }

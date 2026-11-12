@@ -1,31 +1,23 @@
-import { Readable } from "node:stream";
-import { ZipArchive } from "archiver";
-import { inArray, isNull, and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, galleryItems } from "@/lib/db/schema";
-import { logError } from "@/lib/error-log";
 import { requireAdminSession } from "@/lib/require-admin";
-import { getObjectStream } from "@/lib/storage";
+import { withErrorLogging } from "@/lib/with-error-logging";
+import { zipResponse } from "@/lib/zip-download";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Admin-only zip of a set of originals -- shared by "download whole gallery" and
- * "download selected" in the library/gallery editor's bulk-select mode. Streams each
- * file into the archive as it's fetched from B2 rather than buffering, same
- * reasoning as the per-gallery route this replaced.
+ * "download selected" in the library/gallery editor's bulk-select mode.
  *
- * galleryId (whole gallery) and ids (an explicit subset) are alternatives, not both
- * required -- confirmed live: passing every item's id as a comma-joined query param
- * for a ~215-item gallery built an ~8KB URL that the raw connection was refused for
- * outright (curl got a bare connection reset, no HTTP response at all) before the
- * request even reached the app. galleryId sidesteps that entirely by resolving items
- * server-side, the same way the public gallery-download-zip route already does;
- * "download selected" still needs an explicit id list (it's an arbitrary
- * user-picked subset), so that path is unchanged and carries the same latent risk
- * if someone selects an extreme number of items in one go. */
-export async function GET(req: NextRequest) {
+ * galleryId (whole gallery) and ids (an explicit subset) are alternatives. Passing
+ * every item's id for a ~215-item gallery built an ~8KB URL whose connection was
+ * refused outright, so galleryId resolves items server-side instead; "download
+ * selected" still needs an explicit id list, since it's an arbitrary user-picked
+ * subset. */
+export const GET = withErrorLogging("library-download-zip", async (req: NextRequest) => {
   const { response } = await requireAdminSession();
   if (response) return response;
 
@@ -49,39 +41,5 @@ export async function GET(req: NextRequest) {
         .where(and(inArray(assets.id, ids), isNull(assets.deletedAt)));
   if (items.length === 0) return NextResponse.json({ error: "no matching photos" }, { status: 404 });
 
-  const archive = new ZipArchive({ zlib: { level: 6 } });
-  // See public/gallery-download-zip/route.ts -- archive is an EventEmitter, and
-  // without a listener here, destroy(error) or a client disconnecting mid-download
-  // throws an uncaught exception instead of just failing this one request.
-  archive.on("error", () => {});
-
-  (async () => {
-    try {
-      const seenNames = new Map<string, number>();
-      for (const item of items) {
-        let entryName = item.filename;
-        const count = seenNames.get(entryName) ?? 0;
-        seenNames.set(entryName, count + 1);
-        if (count > 0) {
-          const dot = entryName.lastIndexOf(".");
-          entryName = dot > 0 ? `${entryName.slice(0, dot)} (${count})${entryName.slice(dot)}` : `${entryName} (${count})`;
-        }
-        const stream = await getObjectStream(item.storageKey);
-        archive.append(stream, { name: entryName });
-      }
-      await archive.finalize();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      await logError("library-download-zip", error);
-      archive.destroy(error);
-    }
-  })();
-
-  const webStream = Readable.toWeb(archive) as ReadableStream;
-  return new NextResponse(webStream, {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="${name}.zip"`,
-    },
-  });
-}
+  return zipResponse("library-download-zip", name, items, req.signal);
+});
