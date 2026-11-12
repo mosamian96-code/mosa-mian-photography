@@ -20,13 +20,12 @@ const hasFfmpeg = (() => {
 
 let dir: string;
 
-async function makeVideo(name: string, seconds: number, extraArgs: string[] = []) {
+async function makeVideo(name: string, seconds: number) {
   const file = path.join(dir, name);
   await run("ffmpeg", [
     "-v", "error", "-y",
     "-f", "lavfi", "-i", `testsrc=duration=${seconds}:size=320x240:rate=10`,
     "-pix_fmt", "yuv420p",
-    ...extraArgs,
     file,
   ]);
   return file;
@@ -48,8 +47,17 @@ describe.skipIf(!hasFfmpeg)("extractVideoPoster", () => {
   });
 
   it("applies rotation metadata, so portrait phone videos come out upright", async () => {
-    const poster = await extractVideoPoster(await makeVideo("rotated.mp4", 3, ["-metadata:s:v:0", "rotate=90"]));
-    const meta = await sharp(poster).metadata();
+    // Like a phone video: landscape pixels plus a display-rotation tag, stream-copied
+    // so the pixels stay unrotated. ffmpeg 6.1+ sets the tag with -display_rotation;
+    // older versions (the worker's Debian ffmpeg 5.1) only understand the rotate
+    // metadata key, which newer ones ignore.
+    const plain = await makeVideo("to-rotate.mp4", 3);
+    const rotated = path.join(dir, "rotated.mp4");
+    await run("ffmpeg", ["-v", "error", "-y", "-display_rotation", "90", "-i", plain, "-c", "copy", rotated]).catch(() =>
+      run("ffmpeg", ["-v", "error", "-y", "-i", plain, "-c", "copy", "-metadata:s:v:0", "rotate=90", rotated]),
+    );
+
+    const meta = await sharp(await extractVideoPoster(rotated)).metadata();
     expect([meta.width, meta.height]).toEqual([240, 320]);
   });
 
