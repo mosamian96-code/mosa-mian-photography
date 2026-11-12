@@ -14,7 +14,8 @@
 # are restored and an alert email goes out.
 #
 # HEALTH_URL overrides the health endpoint, e.g. to exercise the rollback path
-# against a URL that 404s.
+# against a URL that 404s. DEPLOY_COMMIT deploys that commit (fast-forward only)
+# instead of the latest master -- CI uses it to deploy exactly what it tested.
 set -euo pipefail
 
 SITE="https://mosamianphotography.com"
@@ -93,7 +94,12 @@ main() {
   done
 
   git checkout -q -- .
-  git pull -q --ff-only
+  if [ -n "${DEPLOY_COMMIT:-}" ]; then
+    git fetch -q origin
+    git merge -q --ff-only "$DEPLOY_COMMIT"
+  else
+    git pull -q --ff-only
+  fi
   echo "deploying $(git log -1 --format='%h %s') -> ${services[*]}"
 
   docker compose build -q "${services[@]}" migrate

@@ -7,7 +7,9 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded pull-request runs are cancelled; master runs queue instead, so a new
+  # push never cancels a run that's in the middle of deploying.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   check:
@@ -131,3 +133,30 @@ jobs:
             body=$(tail -c 3000 "$f" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::error title=$(basename "$f")::$body"
           done
+
+  deploy:
+    name: Deploy
+    needs: [check, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The server's address lives in a secret, not in this public repository:
+      # Cloudflare hides the origin, and publishing it would let anyone bypass that.
+      - name: Deploy the tested commit
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::notice::Deploy secrets aren't configured yet; skipping the automatic deploy."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key is pinned server-side to scripts/ci-deploy.sh, which deploys this
+          # commit through scripts/deploy.sh (health checks + automatic rollback).
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "root@$DEPLOY_HOST" "$GITHUB_SHA"
