@@ -45,8 +45,18 @@ function buildCsp(nonce: string) {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'self'",
+    // Violations are reported to /api/csp-report and land in the studio error log, so
+    // a request this policy blocks shows up within minutes instead of surfacing as a
+    // vague client error (as the B2 upload block above did). report-to is the current
+    // mechanism (Chrome); report-uri covers Firefox and Safari.
+    "report-uri /api/csp-report",
+    "report-to csp",
   ].join("; ");
 }
+
+// The Reporting API wants an absolute HTTPS endpoint; behind Caddy the app itself sees
+// plain HTTP, so the public origin comes from AUTH_URL rather than the request.
+const REPORTING_ENDPOINTS = process.env.AUTH_URL ? `csp="${process.env.AUTH_URL}/api/csp-report"` : null;
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
@@ -67,6 +77,7 @@ export default auth((req) => {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", buildCsp(nonce));
+  if (REPORTING_ENDPOINTS) response.headers.set("Reporting-Endpoints", REPORTING_ENDPOINTS);
   return response;
 });
 
