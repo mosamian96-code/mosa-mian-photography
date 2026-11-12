@@ -12,6 +12,12 @@ export type GeneratedDerivative = {
 
 const SIZES = [400, 1200, 2560] as const;
 
+// effort 2 rather than sharp's default 4: measured on the production server, AVIF
+// encoding at effort 4 took 4-5x longer (7.8s vs 2.0s at 2560px) for files only ~2%
+// smaller at the same quality, and it dominated per-photo processing time -- a
+// 230-photo backlog took hours on the 2-core server.
+const AVIF_OPTIONS = { quality: 55, effort: 2 } as const;
+
 async function renderOne(
   baseRaster: Buffer,
   width: number,
@@ -31,7 +37,7 @@ async function renderOne(
   // conversion is to drop all EXIF/IPTC/XMP from the output, which is exactly brief
   // section 5's "strip GPS and camera serial from every public derivative" — done by
   // omission, verified by the accompanying test rather than left implicit.
-  if (format === "avif") pipeline = pipeline.avif({ quality: 55 });
+  if (format === "avif") pipeline = pipeline.avif(AVIF_OPTIONS);
   else if (format === "webp") pipeline = pipeline.webp({ quality: 70 });
   else pipeline = pipeline.jpeg({ quality: 90 });
 
@@ -87,7 +93,7 @@ async function renderWatermarkedOne(
       ? sharp(resized).composite([{ input: markForThisSize, tile: true, blend: "over" }])
       : sharp(resized).composite([{ input: markForThisSize, gravity: GRAVITY_MAP[position] }]);
 
-  if (format === "avif") pipeline = pipeline.avif({ quality: 55 });
+  if (format === "avif") pipeline = pipeline.avif(AVIF_OPTIONS);
   else if (format === "webp") pipeline = pipeline.webp({ quality: 70 });
   else pipeline = pipeline.jpeg({ quality: 90 });
 
