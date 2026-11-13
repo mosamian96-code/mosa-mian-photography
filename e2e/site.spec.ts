@@ -96,7 +96,7 @@ test.describe.serial("site", () => {
     expect(errors).toEqual([]);
   });
 
-  test("a client link shows the photo and downloads the whole gallery as a zip", async ({ browser }) => {
+  test("a client link shows the photo and downloads the whole gallery in either size", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
     const errors = watchConsole(page);
@@ -106,13 +106,25 @@ test.describe.serial("site", () => {
     await page.getByRole("button", { name: "Continue" }).click();
     await expectCoverThenPhotos(page);
 
-    const href = await page.getByRole("link", { name: "Download all" }).first().getAttribute("href");
-    const res = await page.request.get(href!);
-    expect(res.status()).toBe(200);
-    expect(res.headers()["content-type"]).toContain("application/zip");
-    const zip = await res.body();
-    expect(zip.subarray(0, 2).toString()).toBe("PK");
-    expect(zip.includes(Buffer.from("e2e-photo.jpg"))).toBe(true);
+    // The gallery offers originals, so "Download all" asks which size.
+    await page.getByRole("button", { name: "Download all" }).click();
+    const sizes = [
+      { option: /Full resolution/, zipName: `${E2E.gallerySlug}.zip` },
+      { option: /Web size/, zipName: `${E2E.gallerySlug}-web-size.zip` },
+    ];
+    for (const { option, zipName } of sizes) {
+      const href = await page.getByRole("link", { name: option }).getAttribute("href");
+      const res = await page.request.get(href!);
+      expect(res.status()).toBe(200);
+      expect(res.headers()["content-type"]).toContain("application/zip");
+      expect(res.headers()["content-disposition"]).toContain(zipName);
+      const zip = await res.body();
+      expect(zip.subarray(0, 2).toString()).toBe("PK");
+      expect(zip.includes(Buffer.from("e2e-photo.jpg"))).toBe(true);
+    }
+    // Escape closes the menu.
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("link", { name: /Web size/ })).toBeHidden();
 
     expect(errors).toEqual([]);
     await context.close();

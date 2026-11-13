@@ -322,6 +322,27 @@ async function publiclyVisibleAssetIds(): Promise<string[]> {
   return rows.filter((r) => reachable.has(r.folderId)).map((r) => r.assetId);
 }
 
+/** One asset's answer to publiclyVisibleAssetIds, without loading every id -- for
+ * authorizing a single request from a cross-gallery page (a keyword page's video). */
+export async function isPubliclyVisibleAsset(assetId: string): Promise<boolean> {
+  const [reachable, rows] = await Promise.all([
+    publiclyReachableFolderIds(),
+    db
+      .selectDistinct({ folderId: galleries.folderId })
+      .from(galleryItems)
+      .innerJoin(galleries, eq(galleries.id, galleryItems.galleryId))
+      .where(
+        and(
+          eq(galleryItems.assetId, assetId),
+          eq(galleries.visibility, "public"),
+          sql`${galleries.publishedAt} is not null`,
+          isNull(galleries.watermarkId),
+        ),
+      ),
+  ]);
+  return rows.some((r) => reachable.has(r.folderId));
+}
+
 export type KeywordCount = { value: string; count: number };
 
 /** Keyword cloud (brief section 4 gap-fill): every keyword attached to at least one

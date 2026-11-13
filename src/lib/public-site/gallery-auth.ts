@@ -20,17 +20,16 @@ export function verifyGalleryToken(galleryId: string, token: string | undefined)
 }
 
 /** Same authorization a visitor needs to view the gallery page itself (see
- * [...path]/page.tsx) -- "private" means client-link-only and is never satisfied
- * this way, "password" needs the same signed cookie the password form sets, and
- * public/unlisted need nothing beyond knowing the URL. Reused by the public
- * gallery-download and gallery-download-zip routes so "can download" never exceeds
- * "can view". */
+ * resolvePath and [...path]/page.tsx) -- an unpublished gallery is never visible,
+ * "private" means client-link-only and is never satisfied this way, "password" needs
+ * the same signed cookie the password form sets, and public/unlisted need nothing
+ * beyond knowing the URL. Reused by the public download, zip and video routes so
+ * "can download" or "can play" never exceeds "can view". */
 export function publicVisitorCanViewGallery(
-  visibility: "public" | "unlisted" | "password" | "private",
-  galleryId: string,
+  gallery: { id: string; visibility: "public" | "unlisted" | "password" | "private"; publishedAt: Date | null },
   passwordCookieValue: string | undefined,
 ): boolean {
-  if (visibility === "private") return false;
-  if (visibility === "password") return verifyGalleryToken(galleryId, passwordCookieValue);
+  if (!gallery.publishedAt || gallery.visibility === "private") return false;
+  if (gallery.visibility === "password") return verifyGalleryToken(gallery.id, passwordCookieValue);
   return true;
 }

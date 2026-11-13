@@ -123,9 +123,14 @@ export default async function PublicPathPage({ params }: Props) {
                 showFilenames={gallery.showFilenames}
                 slideshowEnabled={gallery.slideshowEnabled}
                 belowCover={cover !== null}
+                galleryId={gallery.id}
                 publicDownload={
                   gallery.publicDownloadsPolicy !== "off"
-                    ? { galleryId: gallery.id, gallerySlug: gallery.slug }
+                    ? {
+                        galleryId: gallery.id,
+                        gallerySlug: gallery.slug,
+                        fullResolution: gallery.publicDownloadsPolicy === "original",
+                      }
                     : undefined
                 }
               />

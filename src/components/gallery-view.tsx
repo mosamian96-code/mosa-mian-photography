@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
+import { DownloadChoice } from "./download-choice";
 import { ErrorBoundary } from "./error-boundary";
 import { FocusFrame } from "./focus-frame";
 import { JustifiedGrid } from "./justified-grid";
@@ -17,6 +18,8 @@ export type ClientGalleryControls = {
   canFavorite: boolean;
   canComment: boolean;
   downloadsEnabled: boolean;
+  /** The gallery offers original files, so downloads let the client choose a size. */
+  fullResolution: boolean;
   initialFavorites: string[];
   initialComments: Record<string, CommentItem[]>;
 };
@@ -68,7 +71,19 @@ function isGridSize(value: string | null): value is GridSize {
   return value === "small" || value === "medium" || value === "large";
 }
 
-export type PublicDownload = { galleryId: string; gallerySlug: string };
+/** `fullResolution`: the gallery offers original files, so downloads offer a size. */
+export type PublicDownload = { galleryId: string; gallerySlug: string; fullResolution: boolean };
+
+/** Query parameters naming how the visitor is authorized to play a video -- the same
+ * way they were authorized to see the page (see /api/public/video-url). */
+function videoAccessQuery(clientAccessId: string | undefined, galleryId: string | undefined) {
+  if (clientAccessId) return `clientAccessId=${encodeURIComponent(clientAccessId)}`;
+  if (galleryId) return `galleryId=${encodeURIComponent(galleryId)}`;
+  return "";
+}
+
+const TOOLBAR_BUTTON =
+  "rounded border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-neutral-400 hover:text-neutral-900";
 
 export function GalleryView({
   images,
@@ -78,6 +93,7 @@ export function GalleryView({
   slideshowEnabled = true,
   publicDownload,
   belowCover = false,
+  galleryId,
 }: {
   images: GalleryImage[];
   clientControls?: ClientGalleryControls;
@@ -96,6 +112,9 @@ export function GalleryView({
    * LCP image -- so no grid image is eager or high-priority to compete with it. The
    * browser still fetches lazy images just below the fold well before they scroll in. */
   belowCover?: boolean;
+  /** The gallery these photos belong to, when there is one (a keyword page mixes
+   * galleries) -- authorizes video playback for visitors without a client link. */
+  galleryId?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -173,20 +192,32 @@ export function GalleryView({
     <>
       <div className="mb-3 flex items-center justify-end gap-2">
         {publicDownload ? (
-          <a
-            href={`/api/public/gallery-download-zip?galleryId=${publicDownload.galleryId}`}
-            className="rounded border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-neutral-400 hover:text-neutral-900"
-          >
-            Download all
-          </a>
+          <DownloadChoice
+            label="Download all"
+            webHref={`/api/public/gallery-download-zip?galleryId=${publicDownload.galleryId}&size=web`}
+            originalHref={
+              publicDownload.fullResolution
+                ? `/api/public/gallery-download-zip?galleryId=${publicDownload.galleryId}&size=original`
+                : null
+            }
+            triggerClassName={TOOLBAR_BUTTON}
+            tone="light"
+            placement="below"
+          />
         ) : null}
         {clientControls?.downloadsEnabled ? (
-          <a
-            href={`/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}`}
-            className="rounded border border-neutral-200 px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:border-neutral-400 hover:text-neutral-900"
-          >
-            Download all
-          </a>
+          <DownloadChoice
+            label="Download all"
+            webHref={`/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}&size=web`}
+            originalHref={
+              clientControls.fullResolution
+                ? `/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}&size=original`
+                : null
+            }
+            triggerClassName={TOOLBAR_BUTTON}
+            tone="light"
+            placement="below"
+          />
         ) : null}
         <div role="group" aria-label="Image size" className="inline-flex rounded border border-neutral-200 bg-white p-0.5">
           {SIZE_OPTIONS.map((opt) => (
@@ -269,6 +300,7 @@ export function GalleryView({
           showFilenames={showFilenames}
           slideshowEnabled={slideshowEnabled}
           publicDownload={publicDownload}
+          videoAccess={videoAccessQuery(clientControls?.clientAccessId, galleryId)}
           clientControls={
             clientControls
               ? {
@@ -276,6 +308,7 @@ export function GalleryView({
                   canFavorite: clientControls.canFavorite,
                   canComment: clientControls.canComment,
                   downloadsEnabled: clientControls.downloadsEnabled,
+                  fullResolution: clientControls.fullResolution,
                   favorited,
                   onToggleFavorite: toggleFavorite,
                   commentsByAsset,

@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, galleries, galleryItems } from "@/lib/db/schema";
-import { resolveDownloadTarget } from "@/lib/public-site/download";
+import { resolveDownloadSize, resolveDownloadTarget, zipNameFor } from "@/lib/public-site/download";
 import { gallerySessionCookieName, publicVisitorCanViewGallery } from "@/lib/public-site/gallery-auth";
 import { withErrorLogging } from "@/lib/with-error-logging";
 import { type ZipEntry, zipResponse } from "@/lib/zip-download";
@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Whole-gallery download for ordinary visitors, gated the same way the single-photo
- * public-download route is. */
+ * public-download route is. `size` is "web" or "original" (see resolveDownloadSize). */
 export const GET = withErrorLogging("public-gallery-download-zip", async (req: NextRequest) => {
   const galleryId = req.nextUrl.searchParams.get("galleryId");
   if (!galleryId) return NextResponse.json({ error: "galleryId required" }, { status: 400 });
@@ -20,11 +20,13 @@ export const GET = withErrorLogging("public-gallery-download-zip", async (req: N
   if (!gallery || gallery.publicDownloadsPolicy === "off") {
     return NextResponse.json({ error: "downloads disabled" }, { status: 403 });
   }
-  const policy = gallery.publicDownloadsPolicy;
   const token = req.cookies.get(gallerySessionCookieName(galleryId))?.value;
-  if (!publicVisitorCanViewGallery(gallery.visibility, galleryId, token)) {
+  if (!publicVisitorCanViewGallery(gallery, token)) {
     return NextResponse.json({ error: "not authorized" }, { status: 403 });
   }
+  const size = resolveDownloadSize(gallery.publicDownloadsPolicy, req.nextUrl.searchParams.get("size"));
+  if (!size.ok) return NextResponse.json({ error: size.error }, { status: size.status });
+  const chosenSize = size.size;
 
   const items = await db
     .select({ asset: assets })
@@ -36,10 +38,10 @@ export const GET = withErrorLogging("public-gallery-download-zip", async (req: N
   const watermark = { watermarkId: gallery.watermarkId };
   async function* targets(): AsyncIterable<ZipEntry> {
     for (const { asset } of items) {
-      const target = await resolveDownloadTarget(policy, watermark, asset);
+      const target = await resolveDownloadTarget(chosenSize, watermark, asset);
       if (target) yield target;
     }
   }
 
-  return zipResponse("public-gallery-download-zip", gallery.slug, targets(), req.signal);
+  return zipResponse("public-gallery-download-zip", zipNameFor(gallery.slug, chosenSize), targets(), req.signal);
 });

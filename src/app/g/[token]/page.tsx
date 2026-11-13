@@ -87,6 +87,7 @@ export default async function ClientGalleryPage({ params }: Props) {
               canFavorite: link.canFavorite,
               canComment: link.canComment,
               downloadsEnabled: link.downloadsEnabled && gallery.downloadsPolicy !== "off",
+              fullResolution: gallery.downloadsPolicy === "original",
               initialFavorites: favoriteRows.map((f) => f.assetId),
               initialComments,
             }}

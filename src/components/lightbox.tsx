@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GalleryImage } from "@/lib/public-site/resolve";
+import { DownloadChoice } from "./download-choice";
 import type { CommentItem, PublicDownload } from "./gallery-view";
 
 type LightboxClientControls = {
@@ -9,6 +10,7 @@ type LightboxClientControls = {
   canFavorite: boolean;
   canComment: boolean;
   downloadsEnabled: boolean;
+  fullResolution: boolean;
   favorited: Set<string>;
   onToggleFavorite: (assetId: string) => void;
   commentsByAsset: Record<string, CommentItem[]>;
@@ -85,12 +87,18 @@ function ClientProofingPanel({
           </button>
         ) : null}
         {controls.downloadsEnabled ? (
-          <a
-            href={`/api/public/download?clientAccessId=${controls.clientAccessId}&assetId=${assetId}`}
-            className="text-white/70 transition-colors hover:text-white"
-          >
-            Download
-          </a>
+          <DownloadChoice
+            label="Download"
+            webHref={`/api/public/download?clientAccessId=${controls.clientAccessId}&assetId=${assetId}&size=web`}
+            originalHref={
+              controls.fullResolution
+                ? `/api/public/download?clientAccessId=${controls.clientAccessId}&assetId=${assetId}&size=original`
+                : null
+            }
+            triggerClassName="text-white/70 transition-colors hover:text-white"
+            tone="dark"
+            placement="above"
+          />
         ) : null}
       </div>
 
@@ -145,6 +153,7 @@ export default function Lightbox({
   showFilenames = false,
   slideshowEnabled = true,
   publicDownload,
+  videoAccess,
   clientControls,
 }: {
   images: GalleryImage[];
@@ -155,6 +164,9 @@ export default function Lightbox({
   showFilenames?: boolean;
   slideshowEnabled?: boolean;
   publicDownload?: PublicDownload;
+  /** Query parameters authorizing video playback ("clientAccessId=…", "galleryId=…",
+   * or empty on a cross-gallery page) -- see /api/public/video-url. */
+  videoAccess: string;
   clientControls?: LightboxClientControls;
 }) {
   const [slideshowOn, setSlideshowOn] = useState(false);
@@ -199,6 +211,13 @@ export default function Lightbox({
     }
 
     function onKey(e: KeyboardEvent) {
+      // In the comment box, arrows move the cursor and Escape leaves the field --
+      // neither should change or close the photo mid-sentence.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea") && e.key !== "Tab") {
+        if (e.key === "Escape") target.blur();
+        return;
+      }
       if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "Escape") requestClose();
@@ -254,7 +273,8 @@ export default function Lightbox({
     if (current.kind !== "video") return;
     const assetId = current.assetId;
     let cancelled = false;
-    fetch(`/api/public/video-url?galleryId=${publicDownload?.galleryId}&assetId=${assetId}`)
+    const query = [videoAccess, `assetId=${encodeURIComponent(assetId)}`].filter(Boolean).join("&");
+    fetch(`/api/public/video-url?${query}`)
       .then((r) => r.json())
       .then((data: { url?: string }) => {
         if (!cancelled && data.url) setVideo({ assetId, url: data.url });
@@ -263,7 +283,7 @@ export default function Lightbox({
     return () => {
       cancelled = true;
     };
-  }, [current.assetId, current.kind, publicDownload?.galleryId]);
+  }, [current.assetId, current.kind, videoAccess]);
 
   return (
     <div
@@ -363,12 +383,18 @@ export default function Lightbox({
             {index + 1} / {images.length}
           </p>
           {publicDownload ? (
-            <a
-              href={`/api/public/gallery-download?galleryId=${publicDownload.galleryId}&assetId=${current.assetId}`}
-              className="mt-1 text-xs text-white/60 underline transition-colors hover:text-white"
-            >
-              Download
-            </a>
+            <DownloadChoice
+              label="Download"
+              webHref={`/api/public/gallery-download?galleryId=${publicDownload.galleryId}&assetId=${current.assetId}&size=web`}
+              originalHref={
+                publicDownload.fullResolution
+                  ? `/api/public/gallery-download?galleryId=${publicDownload.galleryId}&assetId=${current.assetId}&size=original`
+                  : null
+              }
+              triggerClassName="mt-1 text-xs text-white/60 underline transition-colors hover:text-white"
+              tone="dark"
+              placement="above"
+            />
           ) : null}
         </div>
 

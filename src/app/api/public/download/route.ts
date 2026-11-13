@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, galleries, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
-import { resolveDownloadTarget } from "@/lib/public-site/download";
+import { resolveDownloadSize, resolveDownloadTarget } from "@/lib/public-site/download";
 import { presignDownloadUrl } from "@/lib/storage";
 import { withErrorLogging } from "@/lib/with-error-logging";
 
@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 // Client-proofing links only -- a private, per-recipient token someone was
 // deliberately sent, not something reachable from a regular public gallery page.
-// General site visitors get no download path at all, by design.
+// Ordinary visitors download through /api/public/gallery-download instead, when the
+// gallery allows it. `size` is "web" or "original" (see resolveDownloadSize).
 export const GET = withErrorLogging("public-download", async (req: NextRequest) => {
   const clientAccessId = req.nextUrl.searchParams.get("clientAccessId");
   const assetId = req.nextUrl.searchParams.get("assetId");
@@ -27,6 +28,8 @@ export const GET = withErrorLogging("public-download", async (req: NextRequest) 
   if (!gallery || gallery.downloadsPolicy === "off") {
     return NextResponse.json({ error: "downloads disabled" }, { status: 403 });
   }
+  const size = resolveDownloadSize(gallery.downloadsPolicy, req.nextUrl.searchParams.get("size"));
+  if (!size.ok) return NextResponse.json({ error: size.error }, { status: size.status });
 
   const inGallery = await db.query.galleryItems.findFirst({
     where: and(eq(galleryItems.galleryId, gallery.id), eq(galleryItems.assetId, assetId)),
@@ -36,7 +39,7 @@ export const GET = withErrorLogging("public-download", async (req: NextRequest) 
   const asset = await db.query.assets.findFirst({ where: and(eq(assets.id, assetId), isNull(assets.deletedAt)) });
   if (!asset) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const target = await resolveDownloadTarget(gallery.downloadsPolicy, gallery, asset);
+  const target = await resolveDownloadTarget(size.size, gallery, asset);
   if (!target) return NextResponse.json({ error: "not ready" }, { status: 404 });
 
   const url = await presignDownloadUrl(target.storageKey, target.filename);

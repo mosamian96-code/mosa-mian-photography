@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, galleries, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
-import { resolveDownloadTarget } from "@/lib/public-site/download";
+import { resolveDownloadSize, resolveDownloadTarget, zipNameFor } from "@/lib/public-site/download";
 import { withErrorLogging } from "@/lib/with-error-logging";
 import { type ZipEntry, zipResponse } from "@/lib/zip-download";
 
@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 /** Whole-album zip for a client-proofing link, gated by the link itself
  * (clientAccessId + its own downloadsEnabled flag) -- the same authorization the
- * link's single-photo download route uses. */
+ * link's single-photo download route uses. `size` is "web" or "original" (see
+ * resolveDownloadSize). */
 export const GET = withErrorLogging("client-access-download-zip", async (req: NextRequest) => {
   const clientAccessId = req.nextUrl.searchParams.get("clientAccessId");
   if (!clientAccessId) return NextResponse.json({ error: "clientAccessId required" }, { status: 400 });
@@ -25,7 +26,9 @@ export const GET = withErrorLogging("client-access-download-zip", async (req: Ne
   if (!gallery || gallery.downloadsPolicy === "off") {
     return NextResponse.json({ error: "downloads disabled" }, { status: 403 });
   }
-  const policy = gallery.downloadsPolicy;
+  const size = resolveDownloadSize(gallery.downloadsPolicy, req.nextUrl.searchParams.get("size"));
+  if (!size.ok) return NextResponse.json({ error: size.error }, { status: size.status });
+  const chosenSize = size.size;
 
   const items = await db
     .select({ asset: assets })
@@ -37,10 +40,10 @@ export const GET = withErrorLogging("client-access-download-zip", async (req: Ne
   const watermark = { watermarkId: gallery.watermarkId };
   async function* targets(): AsyncIterable<ZipEntry> {
     for (const { asset } of items) {
-      const target = await resolveDownloadTarget(policy, watermark, asset);
+      const target = await resolveDownloadTarget(chosenSize, watermark, asset);
       if (target) yield target;
     }
   }
 
-  return zipResponse("client-access-download-zip", gallery.slug, targets(), req.signal);
+  return zipResponse("client-access-download-zip", zipNameFor(gallery.slug, chosenSize), targets(), req.signal);
 });

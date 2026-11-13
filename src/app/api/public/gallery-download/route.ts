@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, galleries, galleryItems } from "@/lib/db/schema";
-import { resolveDownloadTarget } from "@/lib/public-site/download";
+import { resolveDownloadSize, resolveDownloadTarget } from "@/lib/public-site/download";
 import { gallerySessionCookieName, publicVisitorCanViewGallery } from "@/lib/public-site/gallery-auth";
 import { presignDownloadUrl } from "@/lib/storage";
 import { withErrorLogging } from "@/lib/with-error-logging";
@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 // The public counterpart to /api/public/download (which is client-proofing-link
 // only): gated by gallery.publicDownloadsPolicy plus the same view-authorization a
-// visitor needs to see the gallery page at all, rather than a client link.
+// visitor needs to see the gallery page at all, rather than a client link. `size` is
+// "web" or "original" (see resolveDownloadSize).
 export const GET = withErrorLogging("public-gallery-download", async (req: NextRequest) => {
   const galleryId = req.nextUrl.searchParams.get("galleryId");
   const assetId = req.nextUrl.searchParams.get("assetId");
@@ -25,9 +26,11 @@ export const GET = withErrorLogging("public-gallery-download", async (req: NextR
     return NextResponse.json({ error: "downloads disabled" }, { status: 403 });
   }
   const token = req.cookies.get(gallerySessionCookieName(galleryId))?.value;
-  if (!publicVisitorCanViewGallery(gallery.visibility, galleryId, token)) {
+  if (!publicVisitorCanViewGallery(gallery, token)) {
     return NextResponse.json({ error: "not authorized" }, { status: 403 });
   }
+  const size = resolveDownloadSize(gallery.publicDownloadsPolicy, req.nextUrl.searchParams.get("size"));
+  if (!size.ok) return NextResponse.json({ error: size.error }, { status: size.status });
 
   const inGallery = await db.query.galleryItems.findFirst({
     where: and(eq(galleryItems.galleryId, galleryId), eq(galleryItems.assetId, assetId)),
@@ -37,7 +40,7 @@ export const GET = withErrorLogging("public-gallery-download", async (req: NextR
   const asset = await db.query.assets.findFirst({ where: and(eq(assets.id, assetId), isNull(assets.deletedAt)) });
   if (!asset) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const target = await resolveDownloadTarget(gallery.publicDownloadsPolicy, gallery, asset);
+  const target = await resolveDownloadTarget(size.size, gallery, asset);
   if (!target) return NextResponse.json({ error: "not ready" }, { status: 404 });
 
   const url = await presignDownloadUrl(target.storageKey, target.filename);
