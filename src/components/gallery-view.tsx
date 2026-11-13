@@ -77,6 +77,7 @@ export function GalleryView({
   showFilenames = false,
   slideshowEnabled = true,
   publicDownload,
+  belowCover = false,
 }: {
   images: GalleryImage[];
   clientControls?: ClientGalleryControls;
@@ -91,6 +92,10 @@ export function GalleryView({
    * is on for ordinary visitors -- distinct from clientControls.downloadsEnabled,
    * which is the separate client-proofing-link permission. */
   publicDownload?: PublicDownload;
+  /** The page opens on a full-screen cover photo (GalleryCover), which is the page's
+   * LCP image -- so no grid image is eager or high-priority to compete with it. The
+   * browser still fetches lazy images just below the fold well before they scroll in. */
+  belowCover?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -209,7 +214,7 @@ export function GalleryView({
           renderItem={(_gridItem, width, height, index) => {
           const image = images[index];
           const src = pickSrc(image.urls, pickVariantForWidth(width));
-          const isEager = index < EAGER_COUNT;
+          const isEager = !belowCover && index < EAGER_COUNT;
           const isVideo = image.kind === "video";
           return (
             <button

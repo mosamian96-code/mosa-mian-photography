@@ -28,7 +28,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${inter.variable} h-full antialiased`}>
+    // data-scroll-behavior: with smooth scrolling on (globals.css, for in-page links
+    // like a gallery cover's "View gallery"), Next 16 only keeps route changes instant
+    // if this attribute is present.
+    <html lang="en" data-scroll-behavior="smooth" className={`${fraunces.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-white text-neutral-900">{children}</body>
     </html>
   );

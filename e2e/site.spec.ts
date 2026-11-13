@@ -22,6 +22,18 @@ async function expectImageLoaded(img: Locator) {
   await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBeGreaterThan(0);
 }
 
+/** The gallery opens on its cover: the title over the cover photo (no cover is chosen,
+ * so the first photo stands in), and "View gallery" brings the photo grid into view. */
+async function expectCoverThenPhotos(page: Page) {
+  const cover = page.locator("header").filter({ has: page.getByRole("heading", { level: 1, name: "E2E Gallery" }) });
+  await expectImageLoaded(cover.locator("img"));
+  const tile = page.locator('button[data-cursor="view"]').first();
+  await page.getByRole("link", { name: "View gallery" }).click();
+  await expect(tile).toBeInViewport();
+  await expectImageLoaded(tile.locator("img"));
+  return tile;
+}
+
 async function logIn(page: Page) {
   await page.goto("/studio/login");
   await page.getByPlaceholder("you@example.com").fill(E2E.adminEmail);
@@ -74,9 +86,7 @@ test.describe.serial("site", () => {
     const errors = watchConsole(page);
     await page.goto(`/${E2E.folderSlug}/${E2E.gallerySlug}`);
 
-    const tile = page.locator('button[data-cursor="view"]').first();
-    await expectImageLoaded(tile.locator("img"));
-
+    const tile = await expectCoverThenPhotos(page);
     await tile.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
@@ -94,7 +104,7 @@ test.describe.serial("site", () => {
     await page.goto(`/g/${E2E.clientToken}`);
     await page.getByPlaceholder("you@example.com").fill("client@example.com");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expectImageLoaded(page.locator('button[data-cursor="view"] img').first());
+    await expectCoverThenPhotos(page);
 
     const href = await page.getByRole("link", { name: "Download all" }).first().getAttribute("href");
     const res = await page.request.get(href!);

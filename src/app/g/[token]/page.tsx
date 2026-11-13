@@ -4,10 +4,12 @@ import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { ClientAccessEmailForm } from "@/components/client-access-email-form";
 import { ClientAccessPasswordForm } from "@/components/client-access-password-form";
+import { GalleryCover } from "@/components/gallery-cover";
 import { GalleryView, type CommentItem } from "@/components/gallery-view";
 import { db } from "@/lib/db";
 import { clientAccess, comments, favorites, galleries } from "@/lib/db/schema";
 import { clientAccessSessionCookieName, verifyClientAccessToken } from "@/lib/public-site/client-access-auth";
+import { formatCaptureRange, pickCoverImage } from "@/lib/public-site/gallery-cover";
 import { loadGalleryImages } from "@/lib/public-site/resolve";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -58,19 +60,28 @@ export default async function ClientGalleryPage({ params }: Props) {
     (initialComments[c.assetId] ??= []).push({ id: c.id, body: c.body, createdAt: c.createdAt.toISOString() });
   }
 
+  const cover = pickCoverImage(images, gallery.coverAssetId);
+  const dateLabel = formatCaptureRange(images.map((img) => img.capturedAt));
+
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl text-neutral-900" style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}>
-        {gallery.title}
-      </h1>
-      {gallery.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{gallery.description}</p> : null}
-      <div className="mt-6">
+    <main>
+      {cover ? (
+        <GalleryCover title={gallery.title} dateLabel={dateLabel} image={cover} eyebrow="Mosa Mian Photography" fill="screen" />
+      ) : null}
+      <section id="photos" className="mx-auto max-w-6xl scroll-mt-4 px-4 py-8 sm:py-12">
+        {cover ? null : (
+          <h1 className="text-2xl text-neutral-900" style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}>
+            {gallery.title}
+          </h1>
+        )}
+        {gallery.description ? <p className="mb-6 max-w-2xl text-sm leading-relaxed text-neutral-500">{gallery.description}</p> : null}
         {images.length > 0 ? (
           <GalleryView
             images={images}
             showCameraInfo={gallery.showCameraInfo}
             showFilenames={gallery.showFilenames}
             slideshowEnabled={gallery.slideshowEnabled}
+            belowCover={cover !== null}
             clientControls={{
               clientAccessId: link.id,
               canFavorite: link.canFavorite,
@@ -83,7 +94,7 @@ export default async function ClientGalleryPage({ params }: Props) {
         ) : (
           <p className="text-sm text-neutral-400">This gallery is empty.</p>
         )}
-      </div>
+      </section>
     </main>
   );
 }

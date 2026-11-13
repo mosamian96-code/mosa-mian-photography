@@ -4,6 +4,7 @@ import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { notFound, permanentRedirect } from "next/navigation";
 import { FolderSectionGrid } from "@/components/folder-section-grid";
+import { GalleryCover } from "@/components/gallery-cover";
 import { GalleryPasswordForm } from "@/components/gallery-password-form";
 import GalleryMap from "@/components/gallery-map-loader";
 import { GalleryView } from "@/components/gallery-view";
@@ -12,6 +13,7 @@ import { RightClickGuard } from "@/components/right-click-guard";
 import { db } from "@/lib/db";
 import { redirects } from "@/lib/db/schema";
 import { gallerySessionCookieName, verifyGalleryToken } from "@/lib/public-site/gallery-auth";
+import { formatCaptureRange, pickCoverImage } from "@/lib/public-site/gallery-cover";
 import { loadGalleryImages, resolvePath } from "@/lib/public-site/resolve";
 
 type Props = { params: Promise<{ path: string[] }> };
@@ -84,19 +86,33 @@ export default async function PublicPathPage({ params }: Props) {
 
     const images = await loadGalleryImages(gallery);
     const hasGeotagged = images.some((img) => img.gpsLat != null && img.gpsLon != null);
+    const cover = pickCoverImage(images, gallery.coverAssetId);
 
     const content = (
       <PublicShell>
-        <div className="mx-auto max-w-6xl px-4 py-8">
+        {cover ? (
+          <GalleryCover
+            title={gallery.title}
+            dateLabel={formatCaptureRange(images.map((img) => img.capturedAt))}
+            image={cover}
+            fill="below-nav"
+          />
+        ) : null}
+        {/* scroll-mt clears the sticky navigation bar (about 61px) when "View gallery" scrolls here. */}
+        <div id="photos" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-8">
           <Breadcrumb trail={trail} />
           <div style={{ animation: "reveal-up var(--dur-slow) var(--ease-settle) both" }}>
-            <h1
-              className="mt-4 text-2xl text-neutral-900"
-              style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}
-            >
-              {gallery.title}
-            </h1>
-            {gallery.description ? <p className="mt-2 max-w-2xl text-sm text-neutral-500">{gallery.description}</p> : null}
+            {cover ? null : (
+              <h1
+                className="mt-4 text-2xl text-neutral-900"
+                style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}
+              >
+                {gallery.title}
+              </h1>
+            )}
+            {gallery.description ? (
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-neutral-500">{gallery.description}</p>
+            ) : null}
           </div>
           {hasGeotagged && gallery.mapEnabled ? <GalleryMap images={images} /> : null}
           <div className="mt-6">
@@ -106,6 +122,7 @@ export default async function PublicPathPage({ params }: Props) {
                 showCameraInfo={gallery.showCameraInfo}
                 showFilenames={gallery.showFilenames}
                 slideshowEnabled={gallery.slideshowEnabled}
+                belowCover={cover !== null}
                 publicDownload={
                   gallery.publicDownloadsPolicy !== "off"
                     ? { galleryId: gallery.id, gallerySlug: gallery.slug }

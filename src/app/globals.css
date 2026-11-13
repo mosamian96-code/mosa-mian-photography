@@ -68,6 +68,12 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* In-page links (a gallery cover's "View gallery") glide; route changes stay instant
+   via data-scroll-behavior on <html>, and reduced motion turns this off below. */
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--surface);
   color: var(--ink);
