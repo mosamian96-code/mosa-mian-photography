@@ -98,8 +98,10 @@ export default async function PublicPathPage({ params }: Props) {
             fill="below-nav"
           />
         ) : null}
-        {/* scroll-mt clears the sticky navigation bar (about 61px) when "View gallery" scrolls here. */}
-        <div id="photos" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-8">
+        {/* scroll-mt is the sticky navigation bar's height (61px with its border), so
+            "View gallery" stops with the cover fully tucked under the bar -- no sliver of
+            it showing between the bar and the photos. */}
+        <div id="photos" className="mx-auto max-w-6xl scroll-mt-[60px] px-4 py-8">
           <Breadcrumb trail={trail} />
           <div style={{ animation: "reveal-up var(--dur-slow) var(--ease-settle) both" }}>
             {cover ? null : (
