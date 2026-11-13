@@ -7,6 +7,7 @@ import { ClientAccessPasswordForm } from "@/components/client-access-password-fo
 import { GalleryCover } from "@/components/gallery-cover";
 import { GalleryView, type CommentItem } from "@/components/gallery-view";
 import { recordClientView } from "@/lib/client-activity";
+import { formatLongDate } from "@/lib/email-templates";
 import { db } from "@/lib/db";
 import { clientAccess, comments, favorites, galleries } from "@/lib/db/schema";
 import { clientAccessSessionCookieName, verifyClientAccessToken } from "@/lib/public-site/client-access-auth";
@@ -77,6 +78,9 @@ export default async function ClientGalleryPage({ params }: Props) {
           </h1>
         )}
         {gallery.description ? <p className="mb-6 max-w-2xl text-sm leading-relaxed text-neutral-500">{gallery.description}</p> : null}
+        {link.expiresAt ? (
+          <p className="mb-6 text-xs tracking-wide text-neutral-500">Available until {formatLongDate(link.expiresAt)}</p>
+        ) : null}
         {images.length > 0 ? (
           <GalleryView
             images={images}

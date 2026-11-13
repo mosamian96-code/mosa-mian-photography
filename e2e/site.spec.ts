@@ -143,4 +143,33 @@ test.describe.serial("site", () => {
     await expect(activity).toContainText("Downloaded all photos (web size)");
     expect(errors).toEqual([]);
   });
+
+  test("the studio sets a link's expiry date, and the client sees it", async ({ page, browser }) => {
+    await logIn(page);
+    await page.goto(`/studio/galleries/${E2E.galleryId}`);
+
+    const lastDay = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    const iso = lastDay.toISOString().slice(0, 10);
+    const expiry = page.getByLabel("Expires");
+    await expiry.fill(iso);
+    await expiry.blur();
+    await expect(expiry).toHaveValue(iso);
+    await page.reload();
+    await expect(page.getByLabel("Expires")).toHaveValue(iso);
+
+    // The client (who gave their email in an earlier test) sees the last day.
+    const client = await browser.newContext();
+    const clientPage = await client.newPage();
+    await clientPage.goto(`/g/${E2E.clientToken}`);
+    const longDate = lastDay.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+    await expect(clientPage.getByText(`Available until ${longDate}`)).toBeVisible();
+    await client.close();
+
+    // No email provider in the test environment: the studio says why the email didn't
+    // go, rather than failing silently.
+    await page.getByRole("button", { name: "Email to client" }).click();
+    await expect(page.getByLabel("Client's email")).toHaveValue("client@example.com");
+    await page.getByRole("button", { name: "Send email" }).click();
+    await expect(page.getByText(/The email couldn't be sent/)).toBeVisible();
+  });
 });

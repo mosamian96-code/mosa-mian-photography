@@ -113,6 +113,13 @@
       "when": 1794575557951,
       "tag": "0015_client_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794576012407,
+      "tag": "0016_client_link_emails",
+      "breakpoints": true
     }
   ]
 }

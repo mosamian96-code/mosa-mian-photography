@@ -1,6 +1,7 @@
 import { and, eq, ne, sql } from "drizzle-orm";
 import { exiftool } from "exiftool-vendored";
-import { Worker } from "bullmq";
+import { Queue, Worker } from "bullmq";
+import { sendDueExpiryReminders } from "@/lib/client-link-email";
 import { db } from "@/lib/db";
 import { assets, importBatches, jobs } from "@/lib/db/schema";
 import { maybeFinalizeBatch } from "@/lib/ingest/batch";
@@ -28,6 +29,35 @@ const watermarkWorker = new Worker<WatermarkJobData>(WATERMARK_QUEUE_NAME, proce
 watermarkWorker.on("failed", (job, err) => {
   if (!job) return;
   console.error(`[watermark] job ${job.id} (asset ${job.data.assetId}) failed:`, err);
+});
+
+// Scheduled housekeeping. The schedule lives in Redis, so upserting it on every start
+// is idempotent, and a run that falls due while the worker is down happens as soon as
+// it's back.
+const MAINTENANCE_QUEUE_NAME = "maintenance";
+const maintenanceQueue = new Queue(MAINTENANCE_QUEUE_NAME, { connection: redis });
+maintenanceQueue
+  .upsertJobScheduler(
+    "expiry-reminders",
+    { pattern: "0 9 * * *", tz: "UTC" },
+    { name: "expiry-reminders", opts: { removeOnComplete: { count: 30 }, removeOnFail: { count: 30 } } },
+  )
+  .catch((err) => console.error("[maintenance] couldn't schedule expiry reminders:", err));
+
+const maintenanceWorker = new Worker(
+  MAINTENANCE_QUEUE_NAME,
+  async (job) => {
+    if (job.name === "expiry-reminders") {
+      const sent = await sendDueExpiryReminders();
+      console.log(`[maintenance] sent ${sent} expiry reminder(s)`);
+      return { sent };
+    }
+  },
+  { connection: redis, concurrency: 1 },
+);
+
+maintenanceWorker.on("failed", (job, err) => {
+  console.error(`[maintenance] job ${job?.name ?? "?"} failed:`, err);
 });
 
 async function upsertJobRow(data: IngestJobData, status: "active" | "completed" | "failed", error?: string) {
@@ -99,7 +129,8 @@ console.log(`[watermark worker] listening on queue "${WATERMARK_QUEUE_NAME}", co
 
 async function shutdown() {
   console.log("[ingest worker] shutting down...");
-  await Promise.all([worker.close(), watermarkWorker.close()]);
+  await Promise.all([worker.close(), watermarkWorker.close(), maintenanceWorker.close()]);
+  await maintenanceQueue.close();
   await exiftool.end();
   process.exit(0);
 }

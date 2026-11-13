@@ -383,6 +383,12 @@ export const clientAccess = pgTable(
     canComment: boolean("can_comment").notNull().default(true),
     revokedAt: timestamp("revoked_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    // The last "your gallery is ready" email the studio sent for this link, and to whom.
+    sentAt: timestamp("sent_at", { mode: "date" }),
+    sentTo: text("sent_to"),
+    // Set once the "expires soon" reminder has gone out (see lib/expiry-reminders.ts);
+    // cleared whenever the expiry date changes, so a new date gets its own reminder.
+    expiryReminderSentAt: timestamp("expiry_reminder_sent_at", { mode: "date" }),
   },
   (t) => [index("client_access_gallery_id_idx").on(t.galleryId)],
 );

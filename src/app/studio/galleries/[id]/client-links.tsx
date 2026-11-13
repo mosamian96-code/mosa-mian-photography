@@ -18,7 +18,106 @@ type ClientLink = {
   lastViewedAt: string | null;
   viewCount: number;
   downloadCount: number;
+  sentAt: string | null;
+  sentTo: string | null;
 };
+
+const FIELD =
+  "w-full rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100";
+
+/** The link's last day. Saved when the field loses focus, not on every change: typing a
+ * year fires a change per digit (0002, 0020, 0202, 2026), and saving each one could land
+ * out of order. Remounted (via key) when the saved value changes. */
+function ExpiryField({ value, onCommit }: { value: string; onCommit: (date: string) => Promise<string | null> }) {
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <label className="flex items-center gap-1.5" title="The link stops working after this day. The client gets a reminder 3 days before.">
+      Expires
+      <input
+        type="date"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={async () => {
+          if (draft === value) return;
+          const problem = await onCommit(draft);
+          setError(problem);
+          if (problem) setDraft(value);
+        }}
+        className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300"
+      />
+      {error ? <span className="text-red-600 dark:text-red-400">{error}</span> : null}
+    </label>
+  );
+}
+
+/** "Email to client": sends the branded "your photos are ready" email with the link. */
+function SendLinkForm({ link, onDone }: { link: ClientLink; onDone: (sent: boolean) => void }) {
+  const [to, setTo] = useState(link.email ?? link.sentTo ?? "");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    setSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/client-access/${link.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, message: message.trim() || null }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "The email couldn't be sent.");
+        return;
+      }
+      onDone(true);
+    } catch {
+      setError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <form onSubmit={send} className="mt-3 space-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+      <label className="block text-xs text-neutral-500 dark:text-neutral-400">
+        Client&apos;s email
+        <input type="email" required value={to} onChange={(e) => setTo(e.target.value)} className={`mt-1 ${FIELD}`} />
+      </label>
+      <label className="block text-xs text-neutral-500 dark:text-neutral-400">
+        Personal message (optional)
+        <textarea
+          rows={3}
+          maxLength={2000}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Your photos are ready to view. Favourite the ones you love and download them whenever you like."
+          className={`mt-1 ${FIELD}`}
+        />
+      </label>
+      {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : null}
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={sending}
+          className="rounded bg-neutral-900 px-3 py-1.5 text-xs text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+        >
+          {sending ? "Sending…" : "Send email"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDone(false)}
+          className="px-2 py-1.5 text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
 
 type DetailItem = { assetId: string; filename: string; thumbUrl: string | null };
 type DetailComment = DetailItem & { id: string; body: string; createdAt: string };
@@ -30,6 +129,7 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
   const [creating, setCreating] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/galleries/${galleryId}/client-access`);
@@ -53,13 +153,17 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
     load();
   }
 
-  async function patchLink(id: string, fields: Record<string, unknown>) {
-    await fetch(`/api/client-access/${id}`, {
+  /** Returns the server's reason when it refuses the change, null on success. */
+  async function patchLink(id: string, fields: Record<string, unknown>): Promise<string | null> {
+    const res = await fetch(`/api/client-access/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     });
     load();
+    if (res.ok) return null;
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return data.error ?? "Couldn't save that change.";
   }
 
   async function toggleExpand(id: string) {
@@ -109,6 +213,15 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
                       <span className="ml-1 rounded-full bg-neutral-900 px-1.5 text-white dark:bg-neutral-100 dark:text-neutral-900">{link.unreadCommentCount}</span>
                     ) : null}
                   </button>
+                  {link.revokedAt ? null : (
+                    <button
+                      type="button"
+                      onClick={() => setSendingFor(sendingFor === link.id ? null : link.id)}
+                      className="hover:text-neutral-900 dark:hover:text-neutral-100"
+                    >
+                      Email to client
+                    </button>
+                  )}
                   {link.revokedAt ? (
                     <span className="text-red-600 dark:text-red-400">Revoked</span>
                   ) : (
@@ -134,8 +247,13 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
                   </>
                 ) : null}
               </p>
+              {link.sentAt ? (
+                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  Emailed{link.sentTo ? ` to ${link.sentTo}` : ""} {relativeTime(new Date(link.sentAt))}
+                </p>
+              ) : null}
 
-              <div className="mt-2 flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
+              <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-neutral-500 dark:text-neutral-400">
                 <label className="flex items-center gap-1">
                   <input
                     type="checkbox"
@@ -160,7 +278,22 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
                   />
                   Comments
                 </label>
+                <ExpiryField
+                  key={link.expiresAt ?? "none"}
+                  value={link.expiresAt ? link.expiresAt.slice(0, 10) : ""}
+                  onCommit={(date) => patchLink(link.id, { expiresAt: date || null })}
+                />
               </div>
+
+              {sendingFor === link.id ? (
+                <SendLinkForm
+                  link={link}
+                  onDone={(sent) => {
+                    setSendingFor(null);
+                    if (sent) load();
+                  }}
+                />
+              ) : null}
 
               {expanded === link.id && detail ? (
                 <div className="mt-3 border-t border-neutral-100 pt-3 dark:border-neutral-800">
