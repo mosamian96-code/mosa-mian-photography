@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { clientAccess, comments, favorites } from "@/lib/db/schema";
+import { clientAccess, clientActivity, comments, favorites } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/password";
 import { requireAdminSession } from "@/lib/require-admin";
 
@@ -13,10 +13,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (response) return response;
 
   const { id: galleryId } = await params;
-  const links = await db.query.clientAccess.findMany({
-    where: eq(clientAccess.galleryId, galleryId),
-    orderBy: [desc(clientAccess.createdAt)],
-  });
+  const [links, activityRows] = await Promise.all([
+    db.query.clientAccess.findMany({
+      where: eq(clientAccess.galleryId, galleryId),
+      orderBy: [desc(clientAccess.createdAt)],
+    }),
+    db
+      .select({
+        clientAccessId: clientActivity.clientAccessId,
+        lastViewedAt: sql<Date | null>`max(${clientActivity.createdAt}) filter (where ${clientActivity.kind} = 'view')`.mapWith(
+          clientActivity.createdAt,
+        ),
+        viewCount: sql<number>`count(*) filter (where ${clientActivity.kind} = 'view')`.mapWith(Number),
+        downloadCount: sql<number>`count(*) filter (where ${clientActivity.kind} in ('download', 'download_all'))`.mapWith(
+          Number,
+        ),
+      })
+      .from(clientActivity)
+      .where(eq(clientActivity.galleryId, galleryId))
+      .groupBy(clientActivity.clientAccessId),
+  ]);
+  const activityByLink = new Map(activityRows.map((a) => [a.clientAccessId, a]));
 
   const withCounts = await Promise.all(
     links.map(async (link) => {
@@ -24,12 +41,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         db.$count(favorites, eq(favorites.clientAccessId, link.id)),
         db.query.comments.findMany({ where: eq(comments.clientAccessId, link.id) }),
       ]);
+      const activity = activityByLink.get(link.id);
       return {
         ...link,
         passwordHash: undefined,
         favoriteCount: favCount,
         commentCount: commentRows.length,
         unreadCommentCount: commentRows.filter((c) => !c.readAt).length,
+        lastViewedAt: activity?.lastViewedAt ?? null,
+        viewCount: activity?.viewCount ?? 0,
+        downloadCount: activity?.downloadCount ?? 0,
       };
     }),
   );

@@ -129,4 +129,18 @@ test.describe.serial("site", () => {
     expect(errors).toEqual([]);
     await context.close();
   });
+
+  test("the studio shows what the client did with their link", async ({ page }) => {
+    const errors = watchConsole(page);
+    await logIn(page);
+    await page.goto(`/studio/galleries/${E2E.galleryId}`);
+
+    // The previous test opened the link once and downloaded both zips.
+    await expect(page.getByText(/Last opened .+ · 1 visit · 2 downloads/)).toBeVisible();
+    await page.getByRole("button", { name: "Activity", exact: true }).click();
+    const activity = page.locator("ol").filter({ hasText: "Opened the gallery" });
+    await expect(activity).toContainText("Downloaded all photos (full resolution)");
+    await expect(activity).toContainText("Downloaded all photos (web size)");
+    expect(errors).toEqual([]);
+  });
 });

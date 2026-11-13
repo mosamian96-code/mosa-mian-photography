@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { recordClientActivity } from "@/lib/client-activity";
 import { db } from "@/lib/db";
 import { assets, galleries, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
@@ -43,5 +44,6 @@ export const GET = withErrorLogging("public-download", async (req: NextRequest) 
   if (!target) return NextResponse.json({ error: "not ready" }, { status: 404 });
 
   const url = await presignDownloadUrl(target.storageKey, target.filename);
+  await recordClientActivity(resolved.link, { kind: "download", assetId: asset.id, size: size.size });
   return NextResponse.redirect(url);
 });

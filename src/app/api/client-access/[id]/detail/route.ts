@@ -1,12 +1,16 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { comments, favorites } from "@/lib/db/schema";
+import { assets, clientActivity, comments, favorites } from "@/lib/db/schema";
 import { requireAdminSession } from "@/lib/require-admin";
 import { publicDerivativeUrl } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/** How much of a link's activity the studio shows -- recent enough to answer "has the
+ * client seen it, what did they pick, did they download". */
+const ACTIVITY_LIMIT = 100;
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { response } = await requireAdminSession();
@@ -14,9 +18,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id: clientAccessId } = await params;
 
-  const [favoriteRows, commentRows] = await Promise.all([
+  const [favoriteRows, commentRows, activityRows] = await Promise.all([
     db.query.favorites.findMany({ where: eq(favorites.clientAccessId, clientAccessId) }),
     db.query.comments.findMany({ where: eq(comments.clientAccessId, clientAccessId), orderBy: (c, { asc }) => [asc(c.createdAt)] }),
+    db
+      .select({
+        id: clientActivity.id,
+        kind: clientActivity.kind,
+        size: clientActivity.size,
+        filename: assets.originalFilename,
+        createdAt: clientActivity.createdAt,
+      })
+      .from(clientActivity)
+      .leftJoin(assets, eq(assets.id, clientActivity.assetId))
+      .where(eq(clientActivity.clientAccessId, clientAccessId))
+      .orderBy(desc(clientActivity.createdAt))
+      .limit(ACTIVITY_LIMIT),
   ]);
 
   const assetIds = [...new Set([...favoriteRows.map((f) => f.assetId), ...commentRows.map((c) => c.assetId)])];
@@ -53,5 +70,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       body: c.body,
       createdAt: c.createdAt,
     })),
+    activity: activityRows,
   });
 }

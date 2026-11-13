@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { recordClientActivity } from "@/lib/client-activity";
 import { db } from "@/lib/db";
 import { comments, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
@@ -8,13 +9,20 @@ import { withErrorLogging } from "@/lib/with-error-logging";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_COMMENT_LENGTH = 2000;
+
+/** Adds a client's comment on one photo. */
 export const POST = withErrorLogging("public-comments", async (req: NextRequest) => {
-  const { clientAccessId, assetId, body } = (await req.json()) as {
-    clientAccessId?: string;
-    assetId?: string;
-    body?: string;
-  };
-  if (!clientAccessId || !assetId || !body?.trim()) {
+  const json: unknown = await req.json().catch(() => null);
+  const { clientAccessId, assetId, body } = (json ?? {}) as Record<string, unknown>;
+  if (
+    typeof clientAccessId !== "string" ||
+    typeof assetId !== "string" ||
+    typeof body !== "string" ||
+    !clientAccessId ||
+    !assetId ||
+    !body.trim()
+  ) {
     return NextResponse.json({ error: "clientAccessId, assetId, and body required" }, { status: 400 });
   }
 
@@ -29,8 +37,9 @@ export const POST = withErrorLogging("public-comments", async (req: NextRequest)
 
   const [comment] = await db
     .insert(comments)
-    .values({ clientAccessId, assetId, body: body.trim().slice(0, 2000) })
+    .values({ clientAccessId, assetId, body: body.trim().slice(0, MAX_COMMENT_LENGTH) })
     .returning();
+  await recordClientActivity(resolved.link, { kind: "comment", assetId });
 
   return NextResponse.json(comment);
 });

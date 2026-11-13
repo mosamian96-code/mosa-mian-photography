@@ -6,6 +6,7 @@ import { ClientAccessEmailForm } from "@/components/client-access-email-form";
 import { ClientAccessPasswordForm } from "@/components/client-access-password-form";
 import { GalleryCover } from "@/components/gallery-cover";
 import { GalleryView, type CommentItem } from "@/components/gallery-view";
+import { recordClientView } from "@/lib/client-activity";
 import { db } from "@/lib/db";
 import { clientAccess, comments, favorites, galleries } from "@/lib/db/schema";
 import { clientAccessSessionCookieName, verifyClientAccessToken } from "@/lib/public-site/client-access-auth";
@@ -53,6 +54,7 @@ export default async function ClientGalleryPage({ params }: Props) {
     loadGalleryImages(gallery),
     db.query.favorites.findMany({ where: eq(favorites.clientAccessId, link.id) }),
     db.query.comments.findMany({ where: eq(comments.clientAccessId, link.id) }),
+    recordClientView(link),
   ]);
 
   const initialComments: Record<string, CommentItem[]> = {};

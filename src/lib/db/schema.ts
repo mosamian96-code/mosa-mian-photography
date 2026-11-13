@@ -423,6 +423,34 @@ export const comments = pgTable(
   (t) => [index("comment_client_access_id_idx").on(t.clientAccessId)],
 );
 
+/** What each client did with their link -- opened the gallery, favorited or
+ * unfavorited a photo, commented, downloaded a photo or everything -- shown newest
+ * first under the link in the studio. One "view" per visit, not per page load (see
+ * recordClientView). galleryId repeats the link's own so a gallery's activity is one
+ * indexed read; assetId goes null if the photo is later deleted, keeping the event. */
+export const clientActivity = pgTable(
+  "client_activity",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    clientAccessId: text("client_access_id")
+      .notNull()
+      .references(() => clientAccess.id, { onDelete: "cascade" }),
+    galleryId: text("gallery_id")
+      .notNull()
+      .references(() => galleries.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["view", "favorite", "unfavorite", "comment", "download", "download_all"] }).notNull(),
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "set null" }),
+    size: text("size", { enum: ["web", "original"] }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("client_activity_link_created_idx").on(t.clientAccessId, t.createdAt),
+    index("client_activity_gallery_created_idx").on(t.galleryId, t.createdAt),
+  ],
+);
+
 export const contactSubmissions = pgTable("contact_submission", {
   id: text("id")
     .primaryKey()

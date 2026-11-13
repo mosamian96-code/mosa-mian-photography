@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
+import { recordClientActivity } from "@/lib/client-activity";
 import { db } from "@/lib/db";
 import { assets, galleries, galleryItems } from "@/lib/db/schema";
 import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
@@ -45,5 +46,6 @@ export const GET = withErrorLogging("client-access-download-zip", async (req: Ne
     }
   }
 
+  await recordClientActivity(resolved.link, { kind: "download_all", size: chosenSize });
   return zipResponse("client-access-download-zip", zipNameFor(gallery.slug, chosenSize), targets(), req.signal);
 });

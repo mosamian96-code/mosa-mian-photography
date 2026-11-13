@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { type ActivityItem, describeActivity, linkSummary, relativeTime } from "@/lib/client-activity-format";
 
 type ClientLink = {
   id: string;
@@ -14,11 +15,15 @@ type ClientLink = {
   favoriteCount: number;
   commentCount: number;
   unreadCommentCount: number;
+  lastViewedAt: string | null;
+  viewCount: number;
+  downloadCount: number;
 };
 
 type DetailItem = { assetId: string; filename: string; thumbUrl: string | null };
 type DetailComment = DetailItem & { id: string; body: string; createdAt: string };
-type Detail = { favorites: DetailItem[]; comments: DetailComment[] };
+type DetailActivity = ActivityItem & { id: string; createdAt: string };
+type Detail = { favorites: DetailItem[]; comments: DetailComment[]; activity: DetailActivity[] };
 
 export function ClientLinksSection({ galleryId }: { galleryId: string }) {
   const [links, setLinks] = useState<ClientLink[]>([]);
@@ -114,6 +119,21 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
                 </div>
               </div>
               {link.email ? <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">{link.email}</p> : null}
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                {linkSummary(link)}
+                {link.lastViewedAt || link.downloadCount > 0 ? (
+                  <>
+                    {" · "}
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(link.id)}
+                      className="underline-offset-2 hover:text-neutral-900 hover:underline dark:hover:text-neutral-100"
+                    >
+                      {expanded === link.id ? "Hide activity" : "Activity"}
+                    </button>
+                  </>
+                ) : null}
+              </p>
 
               <div className="mt-2 flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
                 <label className="flex items-center gap-1">
@@ -173,6 +193,26 @@ export function ClientLinksSection({ galleryId }: { galleryId: string }) {
                       ))}
                     </ul>
                   ) : null}
+
+                  <h3 className="mt-4 text-xs font-medium text-neutral-700 dark:text-neutral-300">Activity</h3>
+                  {detail.activity.length > 0 ? (
+                    <ol className="mt-2 max-h-64 space-y-1.5 overflow-y-auto pr-1">
+                      {detail.activity.map((a) => (
+                        <li key={a.id} className="flex items-baseline justify-between gap-3 text-xs">
+                          <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">{describeActivity(a)}</span>
+                          <time
+                            dateTime={a.createdAt}
+                            title={new Date(a.createdAt).toLocaleString("en-GB")}
+                            className="shrink-0 tabular-nums text-neutral-400 dark:text-neutral-500"
+                          >
+                            {relativeTime(new Date(a.createdAt))}
+                          </time>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">Nothing yet.</p>
+                  )}
                 </div>
               ) : null}
             </div>
