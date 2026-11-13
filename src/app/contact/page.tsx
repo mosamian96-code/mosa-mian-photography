@@ -30,15 +30,21 @@ export default async function ContactPage() {
 
   return (
     <PublicShell>
-      <div className="mx-auto grid max-w-5xl gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:items-center lg:gap-16 lg:py-24">
-        <RevealOnView className="order-2 lg:order-1">
-          <div className="relative overflow-hidden rounded bg-neutral-100" style={{ aspectRatio: "4/5" }}>
-            {profileUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
+      {/* With a profile photo (Site Settings), photo and form sit side by side; without
+          one, the form stands alone, centered -- never an empty frame. */}
+      <div
+        className={`mx-auto grid gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:py-24 ${
+          profileUrl ? "max-w-5xl lg:grid-cols-2 lg:items-center lg:gap-16" : "max-w-xl"
+        }`}
+      >
+        {profileUrl ? (
+          <RevealOnView className="order-2 lg:order-1">
+            <div className="relative overflow-hidden rounded bg-neutral-100" style={{ aspectRatio: "4/5" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={profileUrl} alt="Mosa Mian" className="h-full w-full object-cover" />
-            ) : null}
-          </div>
-        </RevealOnView>
+            </div>
+          </RevealOnView>
+        ) : null}
 
         <div className="order-1 lg:order-2">
           <RevealOnView>
