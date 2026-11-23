@@ -2,6 +2,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { assets, derivatives, galleries, galleryItems } from "@/lib/db/schema";
+import { renameGallerySlug } from "@/lib/gallery-slug";
 import { enqueueWatermarkForGallery } from "@/lib/ingest/watermark-enqueue";
 import { hashPassword } from "@/lib/password";
 import { requireAdminSession } from "@/lib/require-admin";
@@ -122,7 +123,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (position !== undefined) patch.position = position;
     const publish = optionalBoolean(body, "publish");
     if (publish !== undefined) patch.publishedAt = publish ? new Date() : null;
-    if (Object.keys(patch).length === 0) return badRequest("nothing to update");
+    // The web address goes through renameGallerySlug, which also redirects the old one.
+    const slug = optionalString(body, "slug", { max: 120 });
+    if (Object.keys(patch).length === 0 && slug === undefined) return badRequest("nothing to update");
+
+    if (slug !== undefined) {
+      const renamed = await renameGallerySlug(id, slug);
+      if (!renamed.ok) return NextResponse.json({ error: renamed.error }, { status: renamed.status });
+      if (Object.keys(patch).length === 0) {
+        const current = await db.query.galleries.findFirst({ where: eq(galleries.id, id) });
+        return NextResponse.json({ ...current, passwordHash: undefined });
+      }
+    }
 
     let gallery;
     try {

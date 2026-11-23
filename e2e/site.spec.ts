@@ -236,4 +236,30 @@ test.describe.serial("site", () => {
     await page.getByRole("button", { name: "Send email" }).click();
     await expect(page.getByText(/The email couldn't be sent/)).toBeVisible();
   });
+
+  // Last in the suite: it renames the gallery the tests above use (and renames it back).
+  test("renaming a gallery's web address redirects the old one", async ({ page }) => {
+    await logIn(page);
+    await page.goto(`/studio/galleries/${E2E.galleryId}`);
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("Web address").fill("E2E Renamed");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByLabel("Web address")).toBeHidden();
+
+    const oldPath = `/${E2E.folderSlug}/${E2E.gallerySlug}`;
+    const newPath = `/${E2E.folderSlug}/e2e-renamed`;
+    const moved = await page.request.get(oldPath, { maxRedirects: 0 });
+    expect(moved.status()).toBe(308);
+    expect(moved.headers()["location"]).toBe(newPath);
+    expect((await page.request.get(newPath)).status()).toBe(200);
+
+    // Renaming back makes the original address a real page again, and the
+    // in-between one redirects to it (no stale redirect, no loop).
+    const back = await page.request.patch(`/api/galleries/${E2E.galleryId}`, { data: { slug: E2E.gallerySlug } });
+    expect(back.status()).toBe(200);
+    expect((await page.request.get(oldPath, { maxRedirects: 0 })).status()).toBe(200);
+    const again = await page.request.get(newPath, { maxRedirects: 0 });
+    expect(again.status()).toBe(308);
+    expect(again.headers()["location"]).toBe(oldPath);
+  });
 });
