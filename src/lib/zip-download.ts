@@ -6,6 +6,10 @@ import { getObjectStream } from "@/lib/storage";
 
 export type ZipEntry = { storageKey: string; filename: string };
 
+/** Per-process cap on zips being streamed at once. */
+export const MAX_CONCURRENT_ZIPS = 6;
+let activeZips = 0;
+
 /** Case-insensitive because Windows and macOS extract "IMG_1.JPG" and "img_1.jpg" to
  * the same file. Loops until free, so an existing "a (1).jpg" can't collide with a
  * renamed second "a.jpg". Directory parts are dropped so no entry can extract outside
@@ -67,10 +71,31 @@ export function zipResponse(
   entries: AsyncIterable<ZipEntry> | Iterable<ZipEntry>,
   signal?: AbortSignal,
 ) {
-  const archive = new ZipArchive({ zlib: { level: 6 } });
+  // Each zip holds a socket from the 20-socket streaming pool for as long as the
+  // visitor takes to download it, so a burst of "Download all" clicks could otherwise
+  // take the whole pool. Past the cap, ask the browser to retry shortly.
+  if (activeZips >= MAX_CONCURRENT_ZIPS) {
+    return NextResponse.json(
+      { error: "Too many downloads are running right now. Please try again in a minute." },
+      { status: 503, headers: { "Retry-After": "60" } },
+    );
+  }
+  activeZips++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeZips--;
+  };
+
+  // store: photos are already-compressed JPEGs (and video), so deflating them saves
+  // almost nothing and costs a full CPU core per download on a 2-vCPU server.
+  const archive = new ZipArchive({ store: true });
   // An EventEmitter with no 'error' listener throws an uncaught exception when
   // destroy(error) runs or the visitor disconnects mid-download.
-  archive.on("error", () => {});
+  archive.on("error", release);
+  archive.once("end", release);
+  archive.once("close", release);
 
   let current: Readable | null = null;
   let aborted = false;
