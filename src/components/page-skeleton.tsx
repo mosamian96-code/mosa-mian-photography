@@ -1,8 +1,12 @@
 /**
- * What a public page shows while its server render is still on the way (the route's
- * loading.tsx). Without one, a click on a folder or gallery did nothing visible until
- * the whole page arrived, and Next prefetched each linked page in full; with one, the
- * click answers at once and prefetching stops at this boundary.
+ * What the search page shows while results are on the way (search/loading.tsx), so a
+ * search answers at once instead of appearing to do nothing.
+ *
+ * Only for routes that never 404 or redirect: a loading screen starts the response
+ * with status 200, after which notFound() and permanentRedirect() can no longer set
+ * 404/308. On the folder/gallery and client-link routes that turned every unknown URL
+ * into a 200 "soft 404" and every old-URL redirect into a client-side one, so those
+ * routes have no loading.tsx (caught by the e2e test for a removed endpoint).
  *
  * Static on purpose: the dark bar and the neutral blocks are the same ground the real
  * page paints before its photos load, with no animation (no new effect to approve).
@@ -25,15 +29,11 @@ function Bar() {
 /** Tile heights that read as a photo grid rather than a table. */
 const TILE_HEIGHTS = ["h-48", "h-64", "h-56", "h-64", "h-48", "h-56"];
 
-/** "grid": folders, galleries and search (one route serves folders and galleries, so
- * it can't know which is coming). "client": a client link, which has no site bar and
- * opens on a full-screen cover. */
-export function PageSkeleton({ variant }: { variant: "grid" | "client" }) {
+export function PageSkeleton() {
   return (
     <div className="min-h-screen" aria-busy="true" aria-live="polite">
       <span className="sr-only">Loading</span>
-      {variant === "client" ? null : <Bar />}
-      {variant === "client" ? <div className="h-screen bg-neutral-100" /> : null}
+      <Bar />
       <div className="mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6 h-3 w-40 rounded bg-neutral-100" />
         <div className="mb-8 h-7 w-64 rounded bg-neutral-100" />

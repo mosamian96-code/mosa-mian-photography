@@ -62,6 +62,12 @@ test("a signed-out visitor can reach the password reset pages, and nothing else 
   expect(res.status()).toBe(404);
 });
 
+test("an unknown public page or client link answers with a real 404", async ({ page }) => {
+  // A loading.tsx on these routes once made every unknown URL a 200 "soft 404".
+  expect((await page.request.get("/no-such-folder/no-such-gallery")).status()).toBe(404);
+  expect((await page.request.get("/g/no-such-link")).status()).toBe(404);
+});
+
 // Serial: the later tests view and download the photo the first one uploads.
 test.describe.serial("site", () => {
   test("a photo uploaded in the studio is processed and gets a thumbnail", async ({ page }) => {
