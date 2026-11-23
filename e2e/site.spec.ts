@@ -42,6 +42,26 @@ async function logIn(page: Page) {
   await page.waitForURL((url) => url.pathname.startsWith("/studio") && !url.pathname.startsWith("/studio/login"));
 }
 
+test("a signed-out visitor can reach the password reset pages, and nothing else in the studio", async ({ page }) => {
+  await page.goto("/studio/login");
+  await page.getByRole("link", { name: "Forgot your password?" }).click();
+  await expect(page).toHaveURL(/\/studio\/forgot-password$/);
+  await expect(page.getByRole("heading", { name: "Forgot password?" })).toBeVisible();
+
+  // The link in the reset email opens this page.
+  await page.goto("/studio/reset-password?token=not-a-real-token&email=someone%40example.com");
+  await expect(page).toHaveURL(/\/studio\/reset-password/);
+
+  await page.goto("/studio/galleries");
+  await expect(page).toHaveURL(/\/studio\/login$/);
+
+  // The old "magic token" password-reset endpoint is gone.
+  const res = await page.request.post("/api/admin/reset-password", {
+    data: { email: "e2e@example.com", newPassword: "takeover-attempt", token: "admin-reset-token" },
+  });
+  expect(res.status()).toBe(404);
+});
+
 // Serial: the later tests view and download the photo the first one uploads.
 test.describe.serial("site", () => {
   test("a photo uploaded in the studio is processed and gets a thumbnail", async ({ page }) => {

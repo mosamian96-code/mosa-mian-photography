@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
         <div className="w-full max-w-md rounded bg-neutral-800 p-8">
           <h1 className="mb-2 text-2xl font-bold text-white">Check your email</h1>
           <p className="mb-6 text-neutral-300">
-            We&apos;ve sent a password reset link to <strong>{email}</strong>. Click the link in your email to reset your password.
+            If <strong>{email}</strong> belongs to a studio account, a password reset link is on its way. Click the link in the email to choose a new password.
           </p>
           <p className="text-sm text-neutral-400">The link expires in 1 hour. Check your spam folder if you don&apos;t see it.</p>
           <Link href="/studio/login" className="mt-6 block text-center text-blue-400 hover:text-blue-300">

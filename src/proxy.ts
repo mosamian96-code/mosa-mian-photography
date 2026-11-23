@@ -58,15 +58,25 @@ function buildCsp(nonce: string) {
 // plain HTTP, so the public origin comes from AUTH_URL rather than the request.
 const REPORTING_ENDPOINTS = process.env.AUTH_URL ? `csp="${process.env.AUTH_URL}/api/csp-report"` : null;
 
+/** Exactly `page` or something beneath it -- not a sibling that merely starts with the
+ * same letters ("/studio/login-anything"). */
+function isStudioPage(pathname: string, page: string) {
+  return pathname === page || pathname.startsWith(`${page}/`);
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
 
   if (pathname.startsWith("/studio")) {
-    const isAuthRoute = pathname.startsWith("/studio/login");
+    // Signed-out visitors can reach only the pages for getting back in: sign in, ask
+    // for a reset link, and the page that link opens. (Forgot/reset used to bounce to
+    // the login page, so "Forgot your password?" appeared to do nothing.)
+    const isLogin = isStudioPage(pathname, "/studio/login");
+    const isSignedOutPage = isLogin || isStudioPage(pathname, "/studio/forgot-password") || isStudioPage(pathname, "/studio/reset-password");
     if (!session) {
-      if (!isAuthRoute) return NextResponse.redirect(new URL("/studio/login", req.url));
-    } else if (isAuthRoute) {
+      if (!isSignedOutPage) return NextResponse.redirect(new URL("/studio/login", req.url));
+    } else if (isLogin) {
       return NextResponse.redirect(new URL("/studio", req.url));
     }
   }
