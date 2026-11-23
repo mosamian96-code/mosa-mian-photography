@@ -39,7 +39,7 @@ export function GalleryStatsSection({ galleryId }: { galleryId: string }) {
       {failed ? (
         <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">Stats couldn&apos;t load.</p>
       ) : !stats ? (
-        <div className="mt-3 h-24 animate-pulse rounded bg-neutral-100 dark:bg-neutral-900" />
+        <div className="mt-3 h-24 rounded bg-neutral-100 dark:bg-neutral-900" />
       ) : (
         <div className="mt-3 rounded border border-neutral-200 p-4 dark:border-neutral-800">
           <dl className="flex gap-8 text-sm">
