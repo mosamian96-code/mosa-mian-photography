@@ -451,7 +451,10 @@ export const clientActivity = pgTable(
     galleryId: text("gallery_id")
       .notNull()
       .references(() => galleries.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["view", "favorite", "unfavorite", "comment", "download", "download_all"] }).notNull(),
+    // A plain text column: the enum is TypeScript-only, so adding a kind needs no migration.
+    kind: text("kind", {
+      enum: ["view", "favorite", "unfavorite", "comment", "download", "download_all", "download_favorites"],
+    }).notNull(),
     assetId: text("asset_id").references(() => assets.id, { onDelete: "set null" }),
     size: text("size", { enum: ["web", "original"] }),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),

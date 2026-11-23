@@ -239,6 +239,20 @@ export function GalleryView({
             placement="below"
           />
         ) : null}
+        {clientControls?.downloadsEnabled && clientControls.canFavorite && favorited.size > 0 ? (
+          <DownloadChoice
+            label={`Download favorites (${favorited.size})`}
+            webHref={`/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}&size=web&favorites=1`}
+            originalHref={
+              clientControls.fullResolution
+                ? `/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}&size=original&favorites=1`
+                : null
+            }
+            triggerClassName={TOOLBAR_BUTTON}
+            tone="light"
+            placement="below"
+          />
+        ) : null}
         <div role="group" aria-label="Image size" className="inline-flex rounded border border-neutral-200 bg-white p-0.5">
           {SIZE_OPTIONS.map((opt) => (
             <button

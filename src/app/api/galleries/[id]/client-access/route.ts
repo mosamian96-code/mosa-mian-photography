@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           clientActivity.createdAt,
         ),
         viewCount: sql<number>`count(*) filter (where ${clientActivity.kind} = 'view')`.mapWith(Number),
-        downloadCount: sql<number>`count(*) filter (where ${clientActivity.kind} in ('download', 'download_all'))`.mapWith(
+        downloadCount: sql<number>`count(*) filter (where ${clientActivity.kind} in ('download', 'download_all', 'download_favorites'))`.mapWith(
           Number,
         ),
       })

@@ -15,6 +15,9 @@ describe("describeActivity", () => {
     expect(describeActivity({ kind: "download_all", size: "web", filename: null })).toBe(
       "Downloaded all photos (web size)",
     );
+    expect(describeActivity({ kind: "download_favorites", size: "original", filename: null })).toBe(
+      "Downloaded their favorites (full resolution)",
+    );
   });
 
   it("still reads when the photo has been deleted since", () => {
