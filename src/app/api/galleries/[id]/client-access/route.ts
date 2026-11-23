@@ -1,9 +1,10 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { clientAccess, clientActivity, comments, favorites } from "@/lib/db/schema";
+import { clientAccess, clientActivity, comments, favorites, galleries } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/password";
 import { requireAdminSession } from "@/lib/require-admin";
+import { badRequest, optionalBoolean, optionalString, withJsonBody } from "@/lib/request-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,27 +64,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (response) return response;
 
   const { id: galleryId } = await params;
-  const body = (await req.json()) as {
-    email?: string;
-    password?: string;
-    expiresAt?: string;
-    downloadsEnabled?: boolean;
-    canFavorite?: boolean;
-    canComment?: boolean;
-  };
+  return withJsonBody(req, async (body) => {
+    const email = optionalString(body, "email", { max: 254 });
+    const password = optionalString(body, "password", { max: 200, trim: false });
+    const expiresOn = optionalString(body, "expiresAt", { max: 10 });
+    // Same meaning as the link editor (client-access/[id]): a date means "through the
+    // end of that day, UTC". This used to read it as the start of the day, a day early.
+    let expiresAt: Date | null = null;
+    if (expiresOn) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresOn) || Number.isNaN(Date.parse(expiresOn))) {
+        return badRequest("expiresAt must be a date (YYYY-MM-DD)");
+      }
+      expiresAt = new Date(`${expiresOn}T23:59:59.999Z`);
+    }
 
-  const [link] = await db
-    .insert(clientAccess)
-    .values({
-      galleryId,
-      email: body.email || null,
-      passwordHash: body.password ? hashPassword(body.password) : null,
-      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
-      downloadsEnabled: body.downloadsEnabled ?? true,
-      canFavorite: body.canFavorite ?? true,
-      canComment: body.canComment ?? true,
-    })
-    .returning();
+    const gallery = await db.query.galleries.findFirst({ where: eq(galleries.id, galleryId), columns: { id: true } });
+    if (!gallery) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  return NextResponse.json({ ...link, passwordHash: undefined });
+    const [link] = await db
+      .insert(clientAccess)
+      .values({
+        galleryId,
+        email: email || null,
+        passwordHash: password ? await hashPassword(password) : null,
+        expiresAt,
+        downloadsEnabled: optionalBoolean(body, "downloadsEnabled") ?? true,
+        canFavorite: optionalBoolean(body, "canFavorite") ?? true,
+        canComment: optionalBoolean(body, "canComment") ?? true,
+      })
+      .returning();
+
+    return NextResponse.json({ ...link, passwordHash: undefined });
+  });
 }

@@ -1,9 +1,13 @@
-import { and, asc, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { assetKeywords, assets, derivatives, folders, galleries, galleryItems, keywords } from "@/lib/db/schema";
 import { buildFolderPaths } from "@/lib/public-site/folder-paths";
+import { isGalleryLive } from "@/lib/public-site/gallery-auth";
 import { publicDerivativeUrl } from "@/lib/storage";
+
+/** Published and not past its expiry date -- the SQL twin of isGalleryLive(). */
+export const galleryIsLive = sql`(${galleries.publishedAt} is not null and (${galleries.expiresAt} is null or ${galleries.expiresAt} > now()))`;
 
 type Folder = typeof folders.$inferSelect;
 type Gallery = typeof galleries.$inferSelect;
@@ -82,6 +86,10 @@ async function resolvePathUncached(segments: string[]): Promise<ResolvedFolder |
       where: and(parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId), eq(folders.slug, slug)),
     });
 
+    // "private" means hidden, even to someone with the address. (Folders can no longer
+    // be set to it, see FOLDER_VISIBILITIES, but an older row might have it.) Public
+    // and unlisted folders both open by URL; only public ones are listed.
+    if (folder?.visibility === "private") return null;
     if (folder) {
       current = folder;
       parentId = folder.id;
@@ -93,7 +101,8 @@ async function resolvePathUncached(segments: string[]): Promise<ResolvedFolder |
       const gallery = await db.query.galleries.findFirst({
         where: and(eq(galleries.folderId, current.id), eq(galleries.slug, slug)),
       });
-      if (gallery && gallery.publishedAt && gallery.visibility !== "private") {
+      // An expired gallery (expires_at in the past) is treated like an unpublished one.
+      if (gallery && isGalleryLive(gallery) && gallery.visibility !== "private") {
         return { type: "gallery", folder: current, breadcrumb, gallery };
       }
     }
@@ -140,7 +149,7 @@ async function loadFolderSection(root: Folder): Promise<FolderSection> {
   visit(root.id, new Set());
 
   const visibleGalleries = await db.query.galleries.findMany({
-    where: and(inArray(galleries.folderId, subtreeIds), eq(galleries.visibility, "public"), isNotNull(galleries.publishedAt)),
+    where: and(inArray(galleries.folderId, subtreeIds), eq(galleries.visibility, "public"), galleryIsLive),
     // position first (the studio's manual order); created_at keeps galleries that
     // were never reordered in the order they were made, as before.
     orderBy: [asc(galleries.position), asc(galleries.createdAt)],
@@ -445,7 +454,7 @@ async function publiclyVisibleAssetIds(): Promise<string[]> {
     .where(
       and(
         eq(galleries.visibility, "public"),
-        sql`${galleries.publishedAt} is not null`,
+        galleryIsLive,
         isNull(galleries.watermarkId),
         isNull(assets.deletedAt),
       ),
@@ -466,7 +475,7 @@ export async function isPubliclyVisibleAsset(assetId: string): Promise<boolean> 
         and(
           eq(galleryItems.assetId, assetId),
           eq(galleries.visibility, "public"),
-          sql`${galleries.publishedAt} is not null`,
+          galleryIsLive,
           isNull(galleries.watermarkId),
         ),
       ),
@@ -532,20 +541,15 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
     .where(and(inArray(assets.id, assetIds), isNull(assets.deletedAt)))
     .orderBy(desc(assets.capturedAt));
 
-  const [allDerivatives, metaRows] = await Promise.all([
-    db.query.derivatives.findMany({
-      where: and(inArray(derivatives.assetId, assetIds), eq(derivatives.watermarked, false)),
-    }),
-    db.query.assetMetadata.findMany({ where: (m, { inArray: inArr }) => inArr(m.assetId, assetIds) }),
-  ]);
-  const metaByAsset = new Map(metaRows.map((m) => [m.assetId, m]));
+  const allDerivatives = await db.query.derivatives.findMany({
+    where: and(inArray(derivatives.assetId, assetIds), eq(derivatives.watermarked, false)),
+  });
 
   return rows.map((row) => {
     const urls: Record<string, string> = {};
     for (const d of allDerivatives.filter((d) => d.assetId === row.assetId)) {
       urls[`${d.format}${d.variant}`] = publicDerivativeUrl(d.storageKey);
     }
-    const meta = metaByAsset.get(row.assetId);
     return {
       assetId: row.assetId,
       filename: row.filename,
@@ -555,11 +559,14 @@ async function loadImagesByAssetIds(assetIds: string[]): Promise<GalleryImage[]>
       lqip: row.lqip,
       caption: null,
       capturedAt: row.capturedAt?.toISOString() ?? null,
-      camera: meta?.camera ?? null,
-      lens: meta?.lens ?? null,
-      iso: meta?.iso ?? null,
-      shutter: meta?.shutter ?? null,
-      aperture: meta?.aperture ?? null,
+      // Camera details only where a gallery turned them on (showCameraInfo). A
+      // cross-gallery page can't tell which gallery's setting applies, so it shows
+      // none rather than publishing details a gallery chose to hide.
+      camera: null,
+      lens: null,
+      iso: null,
+      shutter: null,
+      aperture: null,
       // Cross-gallery views have no map to justify publishing coordinates.
       gpsLat: null,
       gpsLon: null,
@@ -592,7 +599,7 @@ export async function searchPublicContent(query: string): Promise<SearchResults>
     db.query.galleries.findMany({
       where: and(
         eq(galleries.visibility, "public"),
-        sql`${galleries.publishedAt} is not null`,
+        galleryIsLive,
         sql`(lower(${galleries.title}) like ${pattern} or lower(coalesce(${galleries.description}, '')) like ${pattern})`,
       ),
       limit: 50,

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { passwordResetTokens, users } from "@/lib/db/schema";
 import { EmailError, sendPasswordResetEmail } from "@/lib/email";
 import { logError } from "@/lib/error-log";
+import { rateLimit, requestIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,11 @@ const RESET_LINK_LIFETIME_MS = 60 * 60 * 1000; // 1 hour
  */
 export async function POST(request: Request) {
   try {
+    // Each request sends an email, so a script could flood the admin's inbox (and use
+    // up the Resend quota) without this.
+    const limited = await rateLimit("forgot-password", requestIp(request), { limit: 5, windowSeconds: 60 * 60 });
+    if (limited) return limited;
+
     const body: unknown = await request.json().catch(() => null);
     const raw = (body as { email?: unknown } | null)?.email;
     const email = typeof raw === "string" ? raw.trim() : "";

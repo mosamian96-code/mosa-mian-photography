@@ -42,7 +42,7 @@ export default async function ClientGalleryPage({ params }: Props) {
   if (link.passwordHash) {
     const cookieStore = await cookies();
     const cookieToken = cookieStore.get(clientAccessSessionCookieName(link.id))?.value;
-    if (!verifyClientAccessToken(link.id, cookieToken)) {
+    if (!verifyClientAccessToken(link, cookieToken)) {
       return <ClientAccessPasswordForm token={token} />;
     }
   }

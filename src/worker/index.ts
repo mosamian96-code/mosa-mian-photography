@@ -2,6 +2,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { exiftool } from "exiftool-vendored";
 import { Queue, Worker } from "bullmq";
 import { sendDueExpiryReminders } from "@/lib/client-link-email";
+import { ERROR_LOG_RETENTION_DAYS, pruneErrorLog } from "@/lib/error-log";
 import { db } from "@/lib/db";
 import { assets, importBatches, jobs } from "@/lib/db/schema";
 import { maybeFinalizeBatch } from "@/lib/ingest/batch";
@@ -43,6 +44,13 @@ maintenanceQueue
     { name: "expiry-reminders", opts: { removeOnComplete: { count: 30 }, removeOnFail: { count: 30 } } },
   )
   .catch((err) => console.error("[maintenance] couldn't schedule expiry reminders:", err));
+maintenanceQueue
+  .upsertJobScheduler(
+    "prune-error-log",
+    { pattern: "30 3 * * *", tz: "UTC" },
+    { name: "prune-error-log", opts: { removeOnComplete: { count: 30 }, removeOnFail: { count: 30 } } },
+  )
+  .catch((err) => console.error("[maintenance] couldn't schedule error-log pruning:", err));
 
 const maintenanceWorker = new Worker(
   MAINTENANCE_QUEUE_NAME,
@@ -51,6 +59,11 @@ const maintenanceWorker = new Worker(
       const sent = await sendDueExpiryReminders();
       console.log(`[maintenance] sent ${sent} expiry reminder(s)`);
       return { sent };
+    }
+    if (job.name === "prune-error-log") {
+      const deleted = await pruneErrorLog();
+      console.log(`[maintenance] removed ${deleted} error log entr${deleted === 1 ? "y" : "ies"} older than ${ERROR_LOG_RETENTION_DAYS} days`);
+      return { deleted };
     }
   },
   { connection: redis, concurrency: 1 },

@@ -4,21 +4,26 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { clientAccess } from "@/lib/db/schema";
 
-function signClientAccessToken(clientAccessId: string): string {
-  return createHmac("sha256", process.env.AUTH_SECRET!).update(clientAccessId).digest("hex");
+/** Signs the link id and its current password hash, so changing a link's password
+ * locks out anyone who unlocked it with the old one (see gallery-auth.ts). */
+function signClientAccessToken(clientAccessId: string, passwordHash: string): string {
+  return createHmac("sha256", process.env.AUTH_SECRET!).update(`${clientAccessId}:${passwordHash}`).digest("hex");
 }
 
 export function clientAccessSessionCookieName(clientAccessId: string) {
   return `mmp_client_${clientAccessId}`;
 }
 
-export function clientAccessSessionCookieValue(clientAccessId: string) {
-  return signClientAccessToken(clientAccessId);
+export function clientAccessSessionCookieValue(clientAccessId: string, passwordHash: string) {
+  return signClientAccessToken(clientAccessId, passwordHash);
 }
 
-export function verifyClientAccessToken(clientAccessId: string, token: string | undefined): boolean {
-  if (!token) return false;
-  const expected = Buffer.from(signClientAccessToken(clientAccessId));
+export function verifyClientAccessToken(
+  link: { id: string; passwordHash: string | null },
+  token: string | undefined,
+): boolean {
+  if (!token || !link.passwordHash) return false;
+  const expected = Buffer.from(signClientAccessToken(link.id, link.passwordHash));
   const actual = Buffer.from(token);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
@@ -43,7 +48,7 @@ export async function resolveLiveClientAccess(
   if (link.passwordHash) {
     const cookieStore = await cookies();
     const cookieToken = cookieStore.get(clientAccessSessionCookieName(link.id))?.value;
-    if (!verifyClientAccessToken(link.id, cookieToken)) {
+    if (!verifyClientAccessToken(link, cookieToken)) {
       return { ok: false, status: 401, error: "locked" };
     }
   }

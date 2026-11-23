@@ -36,7 +36,7 @@ async function main() {
 
   await db
     .insert(users)
-    .values({ email: E2E.adminEmail, name: "E2E Admin", passwordHash: hashPassword(E2E.adminPassword) })
+    .values({ email: E2E.adminEmail, name: "E2E Admin", passwordHash: await hashPassword(E2E.adminPassword) })
     .onConflictDoNothing();
   await db
     .insert(folders)

@@ -98,7 +98,7 @@ export default async function PublicPathPage({ params }: Props) {
     if (gallery.visibility === "password") {
       const cookieStore = await cookies();
       const token = cookieStore.get(gallerySessionCookieName(gallery.id))?.value;
-      if (!verifyGalleryToken(gallery.id, token)) {
+      if (!verifyGalleryToken(gallery, token)) {
         return <GalleryPasswordForm galleryId={gallery.id} />;
       }
     }

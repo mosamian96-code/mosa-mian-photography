@@ -1,15 +1,23 @@
 import { and, eq } from "drizzle-orm";
+import { forgetPasswordChangeCache } from "@/lib/auth/config";
 import { db } from "@/lib/db";
 import { passwordResetTokens, users } from "@/lib/db/schema";
 import { logError } from "@/lib/error-log";
 import { hashPassword } from "@/lib/password";
+import { rateLimit, requestIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 /** Sets a new password from a reset link (token + email, see forgot-password). Every
- * outstanding reset link for the account stops working once one has been used. */
+ * outstanding reset link for the account stops working once one has been used, and
+ * every existing studio session is signed out (passwordChangedAt, see auth config). */
 export async function POST(request: Request) {
   try {
+    // Reset tokens are 64 random hex characters, so guessing is hopeless anyway; this
+    // just stops a script hammering the endpoint.
+    const limited = await rateLimit("reset-password", requestIp(request), { limit: 10, windowSeconds: 60 * 60 });
+    if (limited) return limited;
+
     const body: unknown = await request.json().catch(() => null);
     const { token, email, newPassword } = (body ?? {}) as Record<string, unknown>;
 
@@ -34,8 +42,13 @@ export async function POST(request: Request) {
       return Response.json({ error: "This reset link has expired. Request a new one." }, { status: 400 });
     }
 
-    await db.update(users).set({ passwordHash: hashPassword(newPassword) }).where(eq(users.email, resetToken.email));
+    const [updated] = await db
+      .update(users)
+      .set({ passwordHash: await hashPassword(newPassword), passwordChangedAt: new Date() })
+      .where(eq(users.email, resetToken.email))
+      .returning({ id: users.id });
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.email, resetToken.email));
+    if (updated) forgetPasswordChangeCache(updated.id);
 
     return Response.json({ success: true });
   } catch (error) {

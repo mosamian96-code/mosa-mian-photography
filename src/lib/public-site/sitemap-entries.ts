@@ -1,14 +1,14 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { folders, galleries } from "@/lib/db/schema";
-import { listPublicKeywords } from "@/lib/public-site/resolve";
+import { galleryIsLive, listPublicKeywords } from "@/lib/public-site/resolve";
 
 type Folder = typeof folders.$inferSelect;
 
 export async function getAllPublicPaths(): Promise<{ path: string; lastModified?: Date }[]> {
   const allFolders = await db.query.folders.findMany({ where: eq(folders.visibility, "public") });
   const allGalleries = await db.query.galleries.findMany({
-    where: and(eq(galleries.visibility, "public"), isNotNull(galleries.publishedAt)),
+    where: and(eq(galleries.visibility, "public"), galleryIsLive),
   });
 
   const folderById = new Map(allFolders.map((f) => [f.id, f]));

@@ -14,6 +14,10 @@ import { redis } from "@/lib/redis";
 
 type Window = { limit: number; windowSeconds: number };
 
+/** Wrong password guesses allowed per visitor and target (a gallery, a client link,
+ * the studio account) before a 15-minute pause. Generous enough for typos. */
+export const PASSWORD_ATTEMPTS: Window = { limit: 8, windowSeconds: 15 * 60 };
+
 const REDIS_TIMEOUT_MS = 500;
 
 function withTimeout<T>(promise: Promise<T>): Promise<T | null> {
