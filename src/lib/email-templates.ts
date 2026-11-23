@@ -1,7 +1,7 @@
 /**
- * Client emails: "your gallery is ready" and "your gallery expires soon". Table-based
- * HTML with inline styles (what every mail client renders the same way), plus a
- * plain-text version. Same restraint as the site: achromatic, a serif title, one
+ * Client emails ("your gallery is ready", "your gallery expires soon") and the studio
+ * password reset. Table-based HTML with inline styles (what every mail client renders
+ * the same way), plus a plain-text version. Same restraint as the site: achromatic, a serif title, one
  * black button. Every value that came from a person (titles, messages) is escaped.
  */
 
@@ -132,4 +132,25 @@ export function expiryReminderEmail(input: { galleryTitle: string; url: string; 
   );
 
   return { subject: `Your gallery expires on ${when}: ${title}`, html, text };
+}
+
+/** The studio's "Forgot your password?" email, in the same layout as the client emails
+ * (it used to be four unstyled lines). */
+export function passwordResetEmail(input: { url: string }) {
+  const body = "Someone asked to reset the password for your studio account. Choose a new one with the button below.";
+  const footnote = "This link expires in 1 hour. If you didn't ask for this, you can ignore this email: your password won't change.";
+
+  const html = layout({
+    preheader: escapeHtml("Reset your studio password. The link expires in 1 hour."),
+    coverUrl: null,
+    eyebrow: escapeHtml(BRAND),
+    title: "Reset your password",
+    paragraphs: [escapeHtml(body)],
+    buttonLabel: "Choose a new password",
+    url: input.url,
+    footnote: escapeHtml(footnote),
+  });
+  const text = ["Reset your password", "", body, "", `Choose a new password: ${input.url}`, "", footnote, "", BRAND].join("\n");
+
+  return { subject: "Reset your password", html, text };
 }

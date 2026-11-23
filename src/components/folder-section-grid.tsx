@@ -123,7 +123,6 @@ export function FolderSectionGrid({
                 <RevealOnView delayMs={i * 40} className="h-full w-full">
                   <Link
                     href={`/${[...pathSegments, g.slug].join("/")}`}
-                    data-cursor="view"
                     className="group relative block h-full w-full"
                   >
                     <CoverImages card={g} width={width} height={height} eager={depth === 0 && i < 4} priority={depth === 0 && i === 0}>

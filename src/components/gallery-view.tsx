@@ -273,7 +273,6 @@ export function GalleryView({
               type="button"
               onClick={() => setIndex(index)}
               className="group relative block h-full w-full overflow-hidden bg-neutral-100"
-              data-cursor="view"
               style={{ width, height, backgroundImage: image.lqip ? `url(${image.lqip})` : undefined, backgroundSize: "cover" }}
             >
               {/* A video's derivatives are made from its poster frame, so it renders the same way. */}

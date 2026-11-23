@@ -59,14 +59,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 function Breadcrumb({ trail }: { trail: { title: string; href: string }[] }) {
   return (
-    <nav className="flex flex-wrap items-center gap-1 text-sm text-neutral-500">
-      <Link href="/" className="hover:text-neutral-900">
+    // py-3/-my-3 gives each link a 44px-tall tap area without moving the layout.
+    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-sm text-neutral-500">
+      <Link href="/" className="-my-3 py-3 hover:text-neutral-900">
         Home
       </Link>
       {trail.map((t) => (
         <span key={t.href} className="flex items-center gap-1">
           <span>/</span>
-          <Link href={t.href} className="hover:text-neutral-900">
+          <Link href={t.href} className="-my-3 py-3 hover:text-neutral-900">
             {t.title}
           </Link>
         </span>

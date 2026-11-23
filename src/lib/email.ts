@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { passwordResetEmail } from "@/lib/email-templates";
 
 /**
  * Resend's shared test sender, used until EMAIL_FROM names an address on a domain
@@ -41,15 +42,5 @@ export function photographerReplyTo() {
 }
 
 export async function sendPasswordResetEmail(email: string, resetUrl: string) {
-  return sendEmail({
-    to: email,
-    subject: "Reset your password",
-    html: `
-      <p>Click the link below to reset your password:</p>
-      <a href="${resetUrl}">Reset Password</a>
-      <p>This link expires in 1 hour.</p>
-      <p>If you didn't request this, ignore this email.</p>
-    `,
-    text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, ignore this email.`,
-  });
+  return sendEmail({ to: email, ...passwordResetEmail({ url: resetUrl }) });
 }
