@@ -98,10 +98,13 @@ export function GallerySettingsModal({
   gallery: Gallery;
   watermarks: Watermark[];
   onClose: () => void;
-  onSave: (fields: Record<string, unknown>) => Promise<void>;
+  /** Resolves to an error message when the save failed (the dialog then stays open). */
+  onSave: (fields: Record<string, unknown>) => Promise<string | null | void>;
 }) {
   const [tab, setTab] = useState<Tab>("Basics");
   const [title, setTitle] = useState(gallery.title);
+  const [slug, setSlug] = useState(gallery.slug);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [description, setDescription] = useState(gallery.description ?? "");
   const [visibility, setVisibility] = useState(gallery.visibility);
   const [password, setPassword] = useState("");
@@ -159,8 +162,15 @@ export function GallerySettingsModal({
       coverAssetId: coverAssetId || null,
     };
     if (visibility === "password" && password) fields.password = password;
-    await onSave(fields);
+    // Only sent when changed: a rename also writes a redirect from the old address.
+    if (slug.trim() !== gallery.slug) fields.slug = slug;
+    setSaveError(null);
+    const problem = await onSave(fields);
     setSaving(false);
+    if (problem) {
+      setSaveError(problem);
+      return;
+    }
     onClose();
   }
 
@@ -206,6 +216,13 @@ export function GallerySettingsModal({
                 <label className={labelClass}>
                   <span className={labelTextClass}>Title</span>
                   <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className={fieldClass} />
+                </label>
+                <label className={labelClass}>
+                  <span className={labelTextClass}>Web address</span>
+                  <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} className={fieldClass} />
+                  <span className="mt-1 block text-xs text-neutral-500 dark:text-neutral-400">
+                    The last part of the gallery&apos;s URL. Changing it keeps the old address working: it redirects here.
+                  </span>
                 </label>
                 <label className={labelClass}>
                   <span className={labelTextClass}>Description</span>
@@ -425,6 +442,11 @@ export function GallerySettingsModal({
           </div>
 
           <div className="flex items-center justify-end gap-2 border-t border-neutral-200 px-4 py-3 sm:px-5 dark:border-neutral-800">
+            {saveError ? (
+              <p role="alert" className="mr-auto text-xs text-red-600 dark:text-red-400">
+                {saveError}
+              </p>
+            ) : null}
             <button
               type="button"
               onClick={onClose}

@@ -2,6 +2,7 @@ import {
   type AnyPgColumn,
   bigint,
   boolean,
+  date,
   doublePrecision,
   index,
   integer,
@@ -31,6 +32,10 @@ export const users = pgTable("user", {
   // authenticator step became a real lockout risk with no recovery path for a
   // single-admin site with no one else to grant access back).
   passwordHash: text("passwordHash"),
+  // Set whenever the password changes. Sessions signed in before it are rejected (see
+  // the jwt callback in src/lib/auth/config.ts), so a reset signs out every device.
+  // Nullable: null means "never changed since this column existed".
+  passwordChangedAt: timestamp("passwordChangedAt", { mode: "date" }),
 });
 
 export const passwordResetTokens = pgTable("password_reset_token", {
@@ -446,7 +451,10 @@ export const clientActivity = pgTable(
     galleryId: text("gallery_id")
       .notNull()
       .references(() => galleries.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["view", "favorite", "unfavorite", "comment", "download", "download_all"] }).notNull(),
+    // A plain text column: the enum is TypeScript-only, so adding a kind needs no migration.
+    kind: text("kind", {
+      enum: ["view", "favorite", "unfavorite", "comment", "download", "download_all", "download_favorites"],
+    }).notNull(),
     assetId: text("asset_id").references(() => assets.id, { onDelete: "set null" }),
     size: text("size", { enum: ["web", "original"] }),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
@@ -514,3 +522,19 @@ export const siteSettings = pgTable("site_settings", {
   socialEmail: text("social_email"),
   updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
 });
+
+// Per-gallery daily counters (brief section 11: "aggregate at write time, no per-hit
+// rows"). Views count page loads of the public gallery page and of client links;
+// downloads count files handed out, a zip counting each file in it.
+export const galleryDailyStats = pgTable(
+  "gallery_daily_stat",
+  {
+    galleryId: text("gallery_id")
+      .notNull()
+      .references(() => galleries.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    views: integer("views").notNull().default(0),
+    downloads: integer("downloads").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.galleryId, t.day] })],
+);

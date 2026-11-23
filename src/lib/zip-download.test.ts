@@ -35,7 +35,7 @@ vi.mock("@/lib/storage", () => ({
 
 vi.mock("@/lib/error-log", () => ({ logError: vi.fn(async () => {}) }));
 
-const { zipResponse } = await import("./zip-download");
+const { MAX_CONCURRENT_ZIPS, zipResponse } = await import("./zip-download");
 
 async function readAll(res: Response) {
   return Buffer.from(await res.arrayBuffer());
@@ -88,6 +88,23 @@ describe("zipResponse", () => {
 
     expect(storage.requested).toHaveLength(1);
     expect(storage.open).toBe(0);
+  });
+
+  it("refuses with 503 past the concurrent-zip cap and frees a slot when a download ends", async () => {
+    storage.endless = true;
+    const entries = [{ storageKey: "k", filename: "p.jpg" }];
+    const running = Array.from({ length: MAX_CONCURRENT_ZIPS }, () => zipResponse("test", "g", entries));
+    const refused = zipResponse("test", "g", entries);
+    expect(refused.status).toBe(503);
+    expect(refused.headers.get("Retry-After")).toBe("60");
+
+    await running[0].body!.cancel();
+    await new Promise((r) => setTimeout(r, 50));
+    const next = zipResponse("test", "g", entries);
+    expect(next.status).toBe(200);
+
+    await Promise.all([...running.slice(1), next].map((res) => res.body!.cancel()));
+    await new Promise((r) => setTimeout(r, 50));
   });
 
   it("sanitizes the download filename", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml, expiryReminderEmail, formatLongDate, galleryReadyEmail } from "./email-templates";
+import { escapeHtml, expiryReminderEmail, formatLongDate, galleryReadyEmail, passwordResetEmail } from "./email-templates";
 
 const base = {
   galleryTitle: "Ayesha & Bilal",
@@ -63,5 +63,17 @@ describe("expiryReminderEmail", () => {
     expect(email.html).toContain("after 1 December 2026");
     expect(email.html).toContain("Ayesha &amp; Bilal");
     expect(email.text).toContain("Open your gallery: https://example.com/g/abc123");
+  });
+});
+
+describe("passwordResetEmail", () => {
+  it("escapes the reset link in the href and keeps it whole in the plain text", () => {
+    const url = "https://example.com/studio/reset-password?token=abc&email=a%40b.com";
+    const email = passwordResetEmail({ url });
+    expect(email.subject).toBe("Reset your password");
+    expect(email.html).toContain('href="https://example.com/studio/reset-password?token=abc&amp;email=a%40b.com"');
+    expect(email.html).toContain("Choose a new password");
+    expect(email.text).toContain(`Choose a new password: ${url}`);
+    expect(email.text).toContain("expires in 1 hour");
   });
 });

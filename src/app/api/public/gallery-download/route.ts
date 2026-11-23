@@ -6,6 +6,7 @@ import { resolveDownloadSize, resolveDownloadTarget } from "@/lib/public-site/do
 import { gallerySessionCookieName, publicVisitorCanViewGallery } from "@/lib/public-site/gallery-auth";
 import { presignDownloadUrl } from "@/lib/storage";
 import { withErrorLogging } from "@/lib/with-error-logging";
+import { countGalleryStat } from "@/lib/gallery-stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,5 +45,6 @@ export const GET = withErrorLogging("public-gallery-download", async (req: NextR
   if (!target) return NextResponse.json({ error: "not ready" }, { status: 404 });
 
   const url = await presignDownloadUrl(target.storageKey, target.filename);
+  countGalleryStat(gallery.id, "downloads");
   return NextResponse.redirect(url);
 });

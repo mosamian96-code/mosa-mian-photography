@@ -72,6 +72,7 @@ export async function PublicShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
+          {/* Social icons sit in 44px tap boxes (-m-2.5 keeps the spacing as drawn). */}
           <div className="hidden items-center gap-4 lg:flex">
             <Link href="/contact" className="nav-link text-sm tracking-wide text-white/60 transition-colors hover:text-white">
               Contact
@@ -85,7 +86,7 @@ export async function PublicShell({ children }: { children: React.ReactNode }) {
                 rel="noopener noreferrer"
                 aria-label={s.label}
                 title={s.label}
-                className="text-white/50 transition-all duration-300 ease-out hover:scale-110 hover:text-white"
+                className="-m-2.5 inline-flex h-11 w-11 items-center justify-center text-white/50 transition-all duration-300 ease-out hover:scale-110 hover:text-white"
               >
                 <s.icon />
               </a>
@@ -122,7 +123,7 @@ export async function PublicShell({ children }: { children: React.ReactNode }) {
                         rel="noopener noreferrer"
                         aria-label={s.label}
                         title={s.label}
-                        className="text-white/50 transition-all duration-300 ease-out hover:scale-110 hover:text-white"
+                        className="-m-2.5 inline-flex h-11 w-11 items-center justify-center text-white/50 transition-all duration-300 ease-out hover:scale-110 hover:text-white"
                       >
                         <s.icon />
                       </a>

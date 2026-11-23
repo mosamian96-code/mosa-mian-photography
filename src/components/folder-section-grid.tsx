@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FocusFrame } from "@/components/focus-frame";
 import { JustifiedGrid } from "@/components/justified-grid";
 import { RevealOnView } from "@/components/reveal-on-view";
-import type { FolderSection } from "@/lib/public-site/resolve";
+import type { FolderSection, GalleryCard } from "@/lib/public-site/resolve";
 
 // Same small/medium/large row-height pattern as the in-gallery photo grid
 // (gallery-view.tsx) -- a distinct localStorage key since "how big should folder
@@ -123,39 +123,16 @@ export function FolderSectionGrid({
                 <RevealOnView delayMs={i * 40} className="h-full w-full">
                   <Link
                     href={`/${[...pathSegments, g.slug].join("/")}`}
-                    data-cursor="view"
                     className="group relative block h-full w-full"
                   >
-                    <div
-                      className="relative h-full w-full overflow-hidden bg-neutral-100 bg-cover bg-center"
-                      style={g.coverLqip ? { backgroundImage: `url(${g.coverLqip})` } : undefined}
-                    >
-                      {g.coverUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={g.coverUrl}
-                          alt={g.title}
-                          width={width}
-                          height={height}
-                          className={`focus-image h-full w-full object-cover ${g.hoverUrl ? "transition-opacity duration-500 ease-out group-hover:opacity-0" : ""}`}
-                        />
-                      ) : null}
-                      {g.hoverUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={g.hoverUrl}
-                          alt=""
-                          aria-hidden="true"
-                          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-0 transition-opacity duration-500 ease-out group-hover:opacity-100"
-                        />
-                      ) : null}
+                    <CoverImages card={g} width={width} height={height} eager={depth === 0 && i < 4} priority={depth === 0 && i === 0}>
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-transparent" />
                       <FocusFrame />
                       <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 px-3 py-2.5">
                         <GalleryGlyph />
                         <span className="truncate text-sm text-white">{g.title}</span>
                       </div>
-                    </div>
+                    </CoverImages>
                   </Link>
                 </RevealOnView>
               );
@@ -184,5 +161,72 @@ function GalleryGlyph() {
       <circle cx="9" cy="10" r="2" />
       <path d="m4 18 5-5 3 3 4-5 4 5" />
     </svg>
+  );
+}
+
+/**
+ * A gallery card's photos. The cover is responsive (400/1200 in AVIF and WebP, sized
+ * to the tile) and lazy below the first row. The hover photo isn't requested until
+ * the pointer first enters the card -- the homepage used to download every hover
+ * photo up front, doubling its weight for an effect touch screens never show -- and
+ * the cover only fades out once that photo has actually loaded, so a first hover
+ * never flashes the blurred placeholder.
+ */
+function CoverImages({
+  card,
+  width,
+  height,
+  eager,
+  priority,
+  children,
+}: {
+  card: GalleryCard;
+  width: number;
+  height: number;
+  eager: boolean;
+  priority: boolean;
+  children: React.ReactNode;
+}) {
+  const [hoverWanted, setHoverWanted] = useState(false);
+  const [hoverReady, setHoverReady] = useState(false);
+  const sizes = `${Math.ceil(width)}px`;
+
+  return (
+    <div
+      className="relative h-full w-full overflow-hidden bg-neutral-100 bg-cover bg-center"
+      style={card.coverLqip ? { backgroundImage: `url(${card.coverLqip})` } : undefined}
+      onPointerEnter={card.hoverUrl ? () => setHoverWanted(true) : undefined}
+    >
+      {card.coverUrl ? (
+        <picture>
+          {card.coverAvifSrcSet ? <source type="image/avif" srcSet={card.coverAvifSrcSet} sizes={sizes} /> : null}
+          {card.coverSrcSet ? <source type="image/webp" srcSet={card.coverSrcSet} sizes={sizes} /> : null}
+          <img
+            src={card.coverUrl}
+            alt={card.title}
+            width={Math.round(width)}
+            height={Math.round(height)}
+            loading={eager ? "eager" : "lazy"}
+            decoding="async"
+            fetchPriority={priority ? "high" : undefined}
+            className={`focus-image h-full w-full object-cover ${hoverReady ? "transition-opacity duration-500 ease-out group-hover:opacity-0" : ""}`}
+          />
+        </picture>
+      ) : null}
+      {hoverWanted && card.hoverUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={card.hoverUrl}
+          srcSet={card.hoverSrcSet ?? undefined}
+          sizes={sizes}
+          alt=""
+          aria-hidden="true"
+          decoding="async"
+          onLoad={() => setHoverReady(true)}
+          className={`absolute inset-0 h-full w-full scale-105 object-cover opacity-0 transition-opacity duration-500 ease-out ${hoverReady ? "group-hover:opacity-100" : ""}`}
+        />
+      ) : null}
+      {children}
+    </div>
   );
 }

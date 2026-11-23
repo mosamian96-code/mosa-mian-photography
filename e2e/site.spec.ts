@@ -27,7 +27,7 @@ async function expectImageLoaded(img: Locator) {
 async function expectCoverThenPhotos(page: Page) {
   const cover = page.locator("header").filter({ has: page.getByRole("heading", { level: 1, name: "E2E Gallery" }) });
   await expectImageLoaded(cover.locator("img"));
-  const tile = page.locator('button[data-cursor="view"]').first();
+  const tile = page.getByTestId("gallery-tile").first();
   await page.getByRole("link", { name: "View gallery" }).click();
   await expect(tile).toBeInViewport();
   await expectImageLoaded(tile.locator("img"));
@@ -60,6 +60,12 @@ test("a signed-out visitor can reach the password reset pages, and nothing else 
     data: { email: "e2e@example.com", newPassword: "takeover-attempt", token: "admin-reset-token" },
   });
   expect(res.status()).toBe(404);
+});
+
+test("an unknown public page or client link answers with a real 404", async ({ page }) => {
+  // A loading.tsx on these routes once made every unknown URL a 200 "soft 404".
+  expect((await page.request.get("/no-such-folder/no-such-gallery")).status()).toBe(404);
+  expect((await page.request.get("/g/no-such-link")).status()).toBe(404);
 });
 
 // Serial: the later tests view and download the photo the first one uploads.
@@ -107,6 +113,11 @@ test.describe.serial("site", () => {
     await page.goto(`/${E2E.folderSlug}/${E2E.gallerySlug}`);
 
     const tile = await expectCoverThenPhotos(page);
+
+    // Breadcrumb links have a 44px-tall tap area without changing the layout.
+    const home = page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Home" });
+    expect((await home.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
     await tile.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
@@ -161,7 +172,40 @@ test.describe.serial("site", () => {
     const activity = page.locator("ol").filter({ hasText: "Opened the gallery" });
     await expect(activity).toContainText("Downloaded all photos (full resolution)");
     await expect(activity).toContainText("Downloaded all photos (web size)");
+
+    // The same two zips in the gallery's 30-day stats. (Views from Playwright's
+    // headless browser are left out on purpose, like any other headless client.)
+    await expect(page.getByTestId("stats-downloads")).toHaveText("2");
     expect(errors).toEqual([]);
+  });
+
+  test("a client can download just their favorites as a zip", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors = watchConsole(page);
+
+    // The client gave their email in an earlier test (it's stored on the link).
+    await page.goto(`/g/${E2E.clientToken}`);
+    const tile = await expectCoverThenPhotos(page);
+    await expect(page.getByRole("button", { name: /Download favorites/ })).toBeHidden();
+
+    await tile.click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: /Favorite/ }).click();
+    await expect(dialog.getByText("♥")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Download favorites (1)" }).click();
+    const href = await page.getByRole("link", { name: /Web size/ }).getAttribute("href");
+    const res = await page.request.get(href!);
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-disposition"]).toContain(`${E2E.gallerySlug}-favorites-web-size.zip`);
+    const zip = await res.body();
+    expect(zip.subarray(0, 2).toString()).toBe("PK");
+    expect(zip.includes(Buffer.from("e2e-photo.jpg"))).toBe(true);
+
+    expect(errors).toEqual([]);
+    await context.close();
   });
 
   test("the studio sets a link's expiry date, and the client sees it", async ({ page, browser }) => {
@@ -191,5 +235,31 @@ test.describe.serial("site", () => {
     await expect(page.getByLabel("Client's email")).toHaveValue("client@example.com");
     await page.getByRole("button", { name: "Send email" }).click();
     await expect(page.getByText(/The email couldn't be sent/)).toBeVisible();
+  });
+
+  // Last in the suite: it renames the gallery the tests above use (and renames it back).
+  test("renaming a gallery's web address redirects the old one", async ({ page }) => {
+    await logIn(page);
+    await page.goto(`/studio/galleries/${E2E.galleryId}`);
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("Web address").fill("E2E Renamed");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByLabel("Web address")).toBeHidden();
+
+    const oldPath = `/${E2E.folderSlug}/${E2E.gallerySlug}`;
+    const newPath = `/${E2E.folderSlug}/e2e-renamed`;
+    const moved = await page.request.get(oldPath, { maxRedirects: 0 });
+    expect(moved.status()).toBe(308);
+    expect(moved.headers()["location"]).toBe(newPath);
+    expect((await page.request.get(newPath)).status()).toBe(200);
+
+    // Renaming back makes the original address a real page again, and the
+    // in-between one redirects to it (no stale redirect, no loop).
+    const back = await page.request.patch(`/api/galleries/${E2E.galleryId}`, { data: { slug: E2E.gallerySlug } });
+    expect(back.status()).toBe(200);
+    expect((await page.request.get(oldPath, { maxRedirects: 0 })).status()).toBe(200);
+    const again = await page.request.get(newPath, { maxRedirects: 0 });
+    expect(again.status()).toBe(308);
+    expect(again.headers()["location"]).toBe(oldPath);
   });
 });

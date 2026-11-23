@@ -57,6 +57,26 @@ function pickVariantForWidth(width: number): "400" | "1200" | "2560" {
 // than hard-coding index 0.
 const EAGER_COUNT = 4;
 
+const VARIANTS = ["400", "1200", "2560"] as const;
+
+/** "url 400w, url 1200w, ..." so the browser picks by the screen's pixel density
+ * instead of every screen getting the 2x choice above. Derivatives are resized to the
+ * variant's width but never enlarged, so a photo narrower than a variant gets that
+ * variant at its own width -- and two variants can then share a width (keep one). */
+function srcSetFor(urls: Record<string, string>, format: "avif" | "webp", imageWidth: number | null) {
+  const seen = new Set<number>();
+  const parts: string[] = [];
+  for (const v of VARIANTS) {
+    const url = urls[`${format}${v}`];
+    if (!url) continue;
+    const w = Math.min(Number(v), imageWidth ?? Number(v));
+    if (seen.has(w)) continue;
+    seen.add(w);
+    parts.push(`${url} ${w}w`);
+  }
+  return parts.length ? parts.join(", ") : undefined;
+}
+
 // Row-height targets behind the small/medium/large toggle -- "medium" matches the
 // grid's long-standing default so switching to it is a visual no-op.
 const SIZE_OPTIONS = [
@@ -219,6 +239,20 @@ export function GalleryView({
             placement="below"
           />
         ) : null}
+        {clientControls?.downloadsEnabled && clientControls.canFavorite && favorited.size > 0 ? (
+          <DownloadChoice
+            label={`Download favorites (${favorited.size})`}
+            webHref={`/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}&size=web&favorites=1`}
+            originalHref={
+              clientControls.fullResolution
+                ? `/api/public/client-access-download-zip?clientAccessId=${clientControls.clientAccessId}&size=original&favorites=1`
+                : null
+            }
+            triggerClassName={TOOLBAR_BUTTON}
+            tone="light"
+            placement="below"
+          />
+        ) : null}
         <div role="group" aria-label="Image size" className="inline-flex rounded border border-neutral-200 bg-white p-0.5">
           {SIZE_OPTIONS.map((opt) => (
             <button
@@ -245,23 +279,29 @@ export function GalleryView({
           renderItem={(_gridItem, width, height, index) => {
           const image = images[index];
           const src = pickSrc(image.urls, pickVariantForWidth(width));
+          const sizes = `${Math.ceil(width)}px`;
           const isEager = !belowCover && index < EAGER_COUNT;
           const isVideo = image.kind === "video";
           return (
             <button
               type="button"
               onClick={() => setIndex(index)}
+              data-testid="gallery-tile"
               className="group relative block h-full w-full overflow-hidden bg-neutral-100"
-              data-cursor="view"
               style={{ width, height, backgroundImage: image.lqip ? `url(${image.lqip})` : undefined, backgroundSize: "cover" }}
             >
               {/* A video's derivatives are made from its poster frame, so it renders the same way. */}
               <picture>
-                {src.avif ? <source srcSet={src.avif} type="image/avif" /> : null}
+                {src.avif ? (
+                  <source srcSet={srcSetFor(image.urls, "avif", image.width) ?? src.avif} sizes={sizes} type="image/avif" />
+                ) : null}
                 {src.webp ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={src.webp}
+                    srcSet={srcSetFor(image.urls, "webp", image.width)}
+                    sizes={sizes}
+                    decoding="async"
                     alt={image.caption ?? image.filename}
                     loading={isEager ? "eager" : "lazy"}
                     fetchPriority={isEager ? "high" : undefined}

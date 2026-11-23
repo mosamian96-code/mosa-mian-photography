@@ -5,7 +5,7 @@ Self-hosted SmugMug replacement. See [PROJECT_BRIEF.md](./PROJECT_BRIEF.md) for 
 for how to get this onto the real VPS and domain.
 
 Stack: Next.js (App Router) + TypeScript + Tailwind, Postgres via Drizzle, Redis + BullMQ,
-Backblaze B2 for storage, Auth.js (magic link + TOTP), all in Docker behind Caddy and
+Backblaze B2 for storage, Auth.js (email + password for one admin account, set by ADMIN_EMAIL), all in Docker behind Caddy and
 Cloudflare. Not deployed to Vercel — see brief section 3 for why.
 
 ## Local development

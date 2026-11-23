@@ -93,9 +93,15 @@ npm run db:migrate` fails with `drizzle-kit: not found`.)
   `database`, `redis`, and `storage` all `ok: true`. `storage: true` means the B2 round-trip
   (write, read back, delete a test object) succeeded — that's Phase 1's actual proof B2
   credentials work, not just that they're present in `.env`.
-- Visit `https://mosamianphotography.com/studio/login`, sign in with `ADMIN_EMAIL`, follow the
-  emailed link, scan the TOTP QR code with an authenticator app, confirm the 6-digit code. You
-  should land on `/studio` showing all three health checks green.
+- Visit `https://mosamianphotography.com/studio/login` and sign in with `ADMIN_EMAIL` and its
+  password. You should land on `/studio` showing all three health checks green.
+
+  To set or change the password, use **Forgot your password?** on the login page: it emails a
+  reset link, valid for one hour, to `ADMIN_EMAIL`. Until `EMAIL_FROM` is set, that email goes
+  out from Resend's test sender, which only delivers to the Resend account's own address, so
+  `ADMIN_EMAIL` needs to be that address. The reset only works for an admin account that
+  already exists in the database. A brand-new, empty database has none, and nothing in the
+  app creates one yet; restoring a backup ([restore.md](./restore.md)) brings it back.
 
 That last step is the actual Phase 1 done-criterion: logged in, over HTTPS, on the real
 domain.

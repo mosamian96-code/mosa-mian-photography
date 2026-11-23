@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
+import { DEFAULT_DESCRIPTION, SITE_NAME, siteOrigin } from "@/lib/public-site/seo";
 import "./globals.css";
 
 // Self-hosted (downloaded at build time, served from our own origin — never a request
@@ -21,10 +22,18 @@ const inter = Inter({
   weight: ["400", "500", "600"],
 });
 
-export const metadata: Metadata = {
-  title: "Mosa Mian Photography",
-  description: "Portfolio and client galleries.",
-};
+// A function rather than a constant so AUTH_URL is read when the server runs: the
+// Docker build has no environment, and share previews need the real origin to turn
+// relative image and page URLs into absolute ones.
+export function generateMetadata(): Metadata {
+  return {
+    metadataBase: siteOrigin(),
+    title: SITE_NAME,
+    description: DEFAULT_DESCRIPTION,
+    openGraph: { type: "website", siteName: SITE_NAME, locale: "en_GB" },
+    twitter: { card: "summary" },
+  };
+}
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

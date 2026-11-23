@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { Metadata } from "next";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
@@ -13,6 +13,7 @@ import { clientAccess, comments, favorites, galleries } from "@/lib/db/schema";
 import { clientAccessSessionCookieName, verifyClientAccessToken } from "@/lib/public-site/client-access-auth";
 import { formatCaptureRange, pickCoverImage } from "@/lib/public-site/gallery-cover";
 import { loadGalleryImages } from "@/lib/public-site/resolve";
+import { countGalleryStat, isCountableView } from "@/lib/gallery-stats";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -42,7 +43,7 @@ export default async function ClientGalleryPage({ params }: Props) {
   if (link.passwordHash) {
     const cookieStore = await cookies();
     const cookieToken = cookieStore.get(clientAccessSessionCookieName(link.id))?.value;
-    if (!verifyClientAccessToken(link.id, cookieToken)) {
+    if (!verifyClientAccessToken(link, cookieToken)) {
       return <ClientAccessPasswordForm token={token} />;
     }
   }
@@ -50,6 +51,9 @@ export default async function ClientGalleryPage({ params }: Props) {
   if (!link.email) {
     return <ClientAccessEmailForm token={token} galleryTitle={gallery.title} />;
   }
+
+  // Read before after(): request data isn't available inside it in a page.
+  if (isCountableView(await headers())) countGalleryStat(gallery.id, "views");
 
   const [images, favoriteRows, commentRows] = await Promise.all([
     loadGalleryImages(gallery),

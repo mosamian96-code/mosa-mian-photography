@@ -39,7 +39,7 @@ jobs:
         run: npx next typegen && npx tsc --noEmit
 
       - name: Lint
-        run: npx eslint src --max-warnings 0
+        run: npx eslint src e2e --max-warnings 0
 
       - name: Unit tests
         run: npx vitest run

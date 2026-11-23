@@ -22,6 +22,7 @@ export default function SiteSettingsPage() {
   const [picking, setPicking] = useState<"profile" | "hero" | null>(null);
   const [pickerAssets, setPickerAssets] = useState<LibraryAsset[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/site-settings");
@@ -35,11 +36,18 @@ export default function SiteSettingsPage() {
 
   async function patch(fields: Record<string, unknown>) {
     setSaving(true);
-    await fetch("/api/site-settings", {
+    setSaveError(null);
+    const res = await fetch("/api/site-settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     });
+    // The server checks values (social links must be web addresses), so say why a
+    // save was refused instead of silently reloading the old value.
+    if (!res.ok) {
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      setSaveError(data?.error ?? "Couldn't save that change.");
+    }
     setSaving(false);
     load();
   }
@@ -164,6 +172,11 @@ export default function SiteSettingsPage() {
       </section>
 
       {saving ? <p className="mt-4 text-xs text-neutral-400 dark:text-neutral-500">Saving…</p> : null}
+      {saveError ? (
+        <p role="alert" className="mt-4 text-xs text-neutral-900 dark:text-neutral-100">
+          {saveError}
+        </p>
+      ) : null}
 
       {picking ? (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-6">

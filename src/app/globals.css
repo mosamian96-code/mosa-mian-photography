@@ -93,14 +93,10 @@ body {
     scroll-behavior: auto !important;
   }
 
-  /* The two purely-decorative, JS-positioned effects (cursor ring, magnetic button
-     offset) have no CSS transition to neutralize above -- they're inline transforms
-     applied on every pointer move. Their own JS also checks matchMedia and disables
-     itself, but hiding/zeroing here too means a stale inline transform can never be
-     visible even for a single frame before that JS runs. */
-  .cursor-ring {
-    display: none !important;
-  }
+  /* The magnetic button offset is an inline transform applied on every pointer
+     move, so there's no CSS transition to neutralize above. Its JS also checks
+     matchMedia and disables itself, but zeroing it here too means a stale inline
+     transform can never be visible even for a single frame before that JS runs. */
   .magnetic {
     transform: none !important;
   }
@@ -200,14 +196,6 @@ body {
   transform: scale(1.015);
 }
 
-/* Only hides the native pointer over [data-cursor] targets once the ring is actually
-   confirmed active (fine pointer, motion not reduced, JS mounted) -- the class is set
-   by CursorRing itself, so touch devices, keyboard-only visits, and reduced-motion
-   visits never lose their cursor with nothing standing in for it. */
-.has-cursor-ring [data-cursor] {
-  cursor: none;
-}
-
 /* Sidebar nav links: a thin underline sweeps in from the left on hover/focus rather
    than an instant color-only change -- same settle easing as everything else. */
 .nav-link {
@@ -269,36 +257,3 @@ body {
   }
 }
 
-.cursor-ring {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 28px;
-  height: 28px;
-  margin-left: -14px;
-  margin-top: -14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  mix-blend-mode: difference;
-  pointer-events: none;
-  z-index: 999;
-  transition:
-    width var(--dur-micro) var(--ease-settle),
-    height var(--dur-micro) var(--ease-settle),
-    margin var(--dur-micro) var(--ease-settle),
-    opacity var(--dur-micro) linear;
-  will-change: transform;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cursor-ring-label {
-  color: #fff;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity var(--dur-micro) linear;
-}

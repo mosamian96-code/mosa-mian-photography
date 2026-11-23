@@ -7,6 +7,7 @@ import { resolveLiveClientAccess } from "@/lib/public-site/client-access-auth";
 import { resolveDownloadSize, resolveDownloadTarget } from "@/lib/public-site/download";
 import { presignDownloadUrl } from "@/lib/storage";
 import { withErrorLogging } from "@/lib/with-error-logging";
+import { countGalleryStat } from "@/lib/gallery-stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,5 +46,6 @@ export const GET = withErrorLogging("public-download", async (req: NextRequest) 
 
   const url = await presignDownloadUrl(target.storageKey, target.filename);
   await recordClientActivity(resolved.link, { kind: "download", assetId: asset.id, size: size.size });
+  countGalleryStat(gallery.id, "downloads");
   return NextResponse.redirect(url);
 });

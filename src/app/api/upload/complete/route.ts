@@ -7,6 +7,8 @@ import { basenameOf, classifyKind } from "@/lib/ingest/classify";
 import { ingestQueue } from "@/lib/queue";
 import { completeMultipartUpload, headObject } from "@/lib/storage";
 import { requireAdminSession } from "@/lib/require-admin";
+import { badRequest, readJsonObject } from "@/lib/request-body";
+import { isOriginalKey, isSha256 } from "@/lib/upload-input";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +17,9 @@ export async function POST(req: NextRequest) {
   const { response } = await requireAdminSession();
   if (response) return response;
 
-  const body = (await req.json()) as {
+  const raw = await readJsonObject(req);
+  if (!raw) return badRequest("request body must be a JSON object");
+  const body = raw as {
     storageKey?: string;
     uploadId?: string;
     parts?: { partNumber: number; etag: string }[];
@@ -39,6 +43,25 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  // The body is cast above for readability; these are the checks that make the cast
+  // true. A wrong type used to surface as a 500 from deep inside storage or the DB.
+  if (
+    typeof storageKey !== "string" ||
+    typeof sha256 !== "string" ||
+    typeof filename !== "string" ||
+    typeof mime !== "string" ||
+    typeof size !== "number" ||
+    !Number.isInteger(size) ||
+    filename.length > 500 ||
+    mime.length > 200 ||
+    (batchId !== undefined && typeof batchId !== "string") ||
+    (uploadId !== undefined && typeof uploadId !== "string") ||
+    (parts !== undefined &&
+      !(Array.isArray(parts) && parts.every((p) => Number.isInteger(p?.partNumber) && typeof p?.etag === "string")))
+  ) {
+    return badRequest("one or more fields have the wrong type");
+  }
+  if (!isSha256(sha256) || !isOriginalKey(storageKey)) return badRequest("not an upload key");
 
   const kind = classifyKind(filename);
   if (!kind) {

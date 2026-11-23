@@ -2,7 +2,7 @@
  * client component can use it and it can be tested directly. */
 
 export type ActivityItem = {
-  kind: "view" | "favorite" | "unfavorite" | "comment" | "download" | "download_all";
+  kind: "view" | "favorite" | "unfavorite" | "comment" | "download" | "download_all" | "download_favorites";
   size: "web" | "original" | null;
   /** Null when the photo has since been deleted (or for events with no photo). */
   filename: string | null;
@@ -26,6 +26,8 @@ export function describeActivity({ kind, size, filename }: ActivityItem): string
       return `Downloaded ${photo}${sized}`;
     case "download_all":
       return `Downloaded all photos${sized}`;
+    case "download_favorites":
+      return `Downloaded their favorites${sized}`;
   }
 }
 

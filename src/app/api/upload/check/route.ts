@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { assets, importBatches } from "@/lib/db/schema";
 import { maybeFinalizeBatch } from "@/lib/ingest/batch";
 import { requireAdminSession } from "@/lib/require-admin";
+import { optionalEnum, optionalString, requiredString, withJsonBody } from "@/lib/request-body";
+import { isSha256 } from "@/lib/upload-input";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,23 +24,22 @@ export async function POST(req: NextRequest) {
   const { response } = await requireAdminSession();
   if (response) return response;
 
-  const { sha256, batchId, mode } = (await req.json()) as {
-    sha256?: string;
-    batchId?: string;
-    mode?: "skip" | "keep";
-  };
-  if (!sha256) return NextResponse.json({ error: "sha256 required" }, { status: 400 });
+  return withJsonBody(req, async (body) => {
+    const sha256 = requiredString(body, "sha256", { max: 64 }).toLowerCase();
+    if (!isSha256(sha256)) return NextResponse.json({ error: "sha256 must be 64 hex characters" }, { status: 400 });
+    const batchId = optionalString(body, "batchId", { max: 100 });
+    const mode = optionalEnum(body, "mode", ["skip", "keep"] as const);
 
-  const existing = await db.query.assets.findFirst({
-    where: eq(assets.sha256, sha256),
-    columns: {
-      id: true,
-      status: true,
-      originalFilename: true,
-      groupId: true,
-      isGroupPrimary: true,
-      storageKey: true,
-    },
+    const existing = await db.query.assets.findFirst({
+      where: eq(assets.sha256, sha256),
+      columns: {
+        id: true,
+        status: true,
+        originalFilename: true,
+        groupId: true,
+        isGroupPrimary: true,
+        storageKey: true,
+      },
   });
 
   const keep = mode === "keep" && Boolean(existing);
@@ -64,5 +65,6 @@ export async function POST(req: NextRequest) {
     groupId: existing?.groupId,
     isGroupPrimary: existing?.isGroupPrimary,
     storageKey: existing?.storageKey,
+  });
   });
 }

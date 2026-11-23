@@ -7,6 +7,10 @@ exists to recede.
 
 **Light**, committed for v1 — no dark mode, no theme toggle (decided 2026-08-18).
 
+This applies to the public site. The studio (the admin under `/studio`) has its own
+class-based dark mode with a toggle, scoped so it never reaches public pages (see the
+comment at the top of `src/app/globals.css`).
+
 ## Palette
 
 Five neutrals, achromatic. No brand hue anywhere.

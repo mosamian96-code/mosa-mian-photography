@@ -33,7 +33,7 @@ export default async function SearchPage({ searchParams }: Props) {
           <ul className="mt-2 space-y-1">
             {results.galleries.map((g) => (
               <li key={g.id}>
-                <Link href={`${g.folderPath}/${g.slug}`} className="text-neutral-800 hover:text-neutral-900 hover:underline">
+                <Link href={g.path} className="text-neutral-800 hover:text-neutral-900 hover:underline">
                   {g.title}
                 </Link>
               </li>
@@ -48,7 +48,7 @@ export default async function SearchPage({ searchParams }: Props) {
           <ul className="mt-2 space-y-1">
             {results.folders.map((f) => (
               <li key={f.id}>
-                <Link href={`/${f.slug}`} className="text-neutral-800 hover:text-neutral-900 hover:underline">
+                <Link href={f.path} className="text-neutral-800 hover:text-neutral-900 hover:underline">
                   {f.title}
                 </Link>
               </li>

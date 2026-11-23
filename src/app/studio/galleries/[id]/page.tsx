@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ClientLinksSection } from "./client-links";
+import { GalleryStatsSection } from "./gallery-stats";
 import { GallerySettingsModal } from "./gallery-settings-modal";
 import { StudioLightbox } from "./studio-lightbox";
 import { startDownload } from "@/app/studio/start-download";
@@ -117,15 +118,26 @@ export default function GalleryEditorPage() {
       .then((data) => setWatermarks(data.items));
   }, []);
 
-  async function patch(fields: Record<string, unknown>) {
+  /** Returns the server's error message when the save fails, otherwise null. */
+  async function patch(fields: Record<string, unknown>): Promise<string | null> {
     setSaving(true);
-    const res = await fetch(`/api/galleries/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fields),
-    });
-    setSaving(false);
-    if (res.ok) load();
+    try {
+      const res = await fetch(`/api/galleries/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (res.ok) {
+        load();
+        return null;
+      }
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      return data.error ?? "The settings couldn't be saved.";
+    } catch {
+      return "Couldn't reach the server. Check your connection and try again.";
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function removeItem(assetId: string) {
@@ -477,6 +489,7 @@ export default function GalleryEditorPage() {
         />
       ) : null}
 
+      <GalleryStatsSection galleryId={gallery.id} />
       <ClientLinksSection galleryId={gallery.id} />
     </div>
   );

@@ -120,6 +120,13 @@
       "when": 1794576012407,
       "tag": "0016_client_link_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795442970958,
+      "tag": "0017_stats_and_password_changed",
+      "breakpoints": true
     }
   ]
 }
