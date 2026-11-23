@@ -14,7 +14,8 @@ import { db } from "@/lib/db";
 import { redirects } from "@/lib/db/schema";
 import { gallerySessionCookieName, verifyGalleryToken } from "@/lib/public-site/gallery-auth";
 import { formatCaptureRange, pickCoverImage } from "@/lib/public-site/gallery-cover";
-import { loadGalleryImages, resolvePath } from "@/lib/public-site/resolve";
+import { firstCoverUrl, loadGalleryImages, resolvePath } from "@/lib/public-site/resolve";
+import { SITE_NAME, shareMetadata } from "@/lib/public-site/seo";
 
 type Props = { params: Promise<{ path: string[] }> };
 
@@ -22,19 +23,37 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { path } = await params;
   const resolved = await resolvePath(path);
   if (!resolved) return {};
+  const pagePath = "/" + path.map(encodeURIComponent).join("/");
 
   if (resolved.type === "gallery") {
+    const { gallery } = resolved;
+    const title = `${gallery.title} — ${SITE_NAME}`;
+    const description = gallery.description || `Photos from ${gallery.title} by Mosa Mian.`;
+    // A password gallery's preview must not show what the password protects; public
+    // and unlisted galleries share their cover (the same image the page opens with).
+    let image: { url: string; width: number | null; height: number | null } | null = null;
+    if (gallery.visibility !== "password") {
+      const cover = pickCoverImage(await loadGalleryImages(gallery), gallery.coverAssetId);
+      const url = cover?.urls.jpeg2560 ?? cover?.urls.webp1200 ?? null;
+      if (cover && url) image = { url, width: cover.width, height: cover.height };
+    }
     return {
-      title: `${resolved.gallery.title} — Mosa Mian Photography`,
-      description: resolved.gallery.description ?? `Photos from ${resolved.gallery.title} — Mosa Mian Photography.`,
-      keywords: resolved.gallery.metaKeywords || undefined,
-      robots: resolved.gallery.visibility === "public" && resolved.gallery.searchable ? undefined : { index: false },
+      title,
+      description,
+      keywords: gallery.metaKeywords || undefined,
+      robots: gallery.visibility === "public" && gallery.searchable ? undefined : { index: false },
+      ...shareMetadata({ title, description, path: pagePath, image }),
     };
   }
+
+  const title = `${resolved.folder.title} — ${SITE_NAME}`;
+  const description = resolved.folder.description || `${resolved.folder.title}: galleries by Mosa Mian.`;
+  const firstCover = firstCoverUrl(resolved.section);
   return {
-    title: `${resolved.folder.title} — Mosa Mian Photography`,
-    description: resolved.folder.description ?? `${resolved.folder.title} — Mosa Mian Photography.`,
+    title,
+    description,
     robots: resolved.folder.visibility === "public" ? undefined : { index: false },
+    ...shareMetadata({ title, description, path: pagePath, image: firstCover ? { url: firstCover } : null }),
   };
 }
 
