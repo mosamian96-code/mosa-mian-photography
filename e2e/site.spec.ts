@@ -27,7 +27,7 @@ async function expectImageLoaded(img: Locator) {
 async function expectCoverThenPhotos(page: Page) {
   const cover = page.locator("header").filter({ has: page.getByRole("heading", { level: 1, name: "E2E Gallery" }) });
   await expectImageLoaded(cover.locator("img"));
-  const tile = page.locator('button[data-cursor="view"]').first();
+  const tile = page.getByTestId("gallery-tile").first();
   await page.getByRole("link", { name: "View gallery" }).click();
   await expect(tile).toBeInViewport();
   await expectImageLoaded(tile.locator("img"));

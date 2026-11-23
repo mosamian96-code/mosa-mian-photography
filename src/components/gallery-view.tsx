@@ -272,6 +272,7 @@ export function GalleryView({
             <button
               type="button"
               onClick={() => setIndex(index)}
+              data-testid="gallery-tile"
               className="group relative block h-full w-full overflow-hidden bg-neutral-100"
               style={{ width, height, backgroundImage: image.lqip ? `url(${image.lqip})` : undefined, backgroundSize: "cover" }}
             >
