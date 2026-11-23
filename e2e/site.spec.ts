@@ -107,6 +107,11 @@ test.describe.serial("site", () => {
     await page.goto(`/${E2E.folderSlug}/${E2E.gallerySlug}`);
 
     const tile = await expectCoverThenPhotos(page);
+
+    // Breadcrumb links have a 44px-tall tap area without changing the layout.
+    const home = page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Home" });
+    expect((await home.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
     await tile.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
@@ -161,7 +166,40 @@ test.describe.serial("site", () => {
     const activity = page.locator("ol").filter({ hasText: "Opened the gallery" });
     await expect(activity).toContainText("Downloaded all photos (full resolution)");
     await expect(activity).toContainText("Downloaded all photos (web size)");
+
+    // The same two zips in the gallery's 30-day stats. (Views from Playwright's
+    // headless browser are left out on purpose, like any other headless client.)
+    await expect(page.getByTestId("stats-downloads")).toHaveText("2");
     expect(errors).toEqual([]);
+  });
+
+  test("a client can download just their favorites as a zip", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors = watchConsole(page);
+
+    // The client gave their email in an earlier test (it's stored on the link).
+    await page.goto(`/g/${E2E.clientToken}`);
+    const tile = await expectCoverThenPhotos(page);
+    await expect(page.getByRole("button", { name: /Download favorites/ })).toBeHidden();
+
+    await tile.click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: /Favorite/ }).click();
+    await expect(dialog.getByText("♥")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Download favorites (1)" }).click();
+    const href = await page.getByRole("link", { name: /Web size/ }).getAttribute("href");
+    const res = await page.request.get(href!);
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-disposition"]).toContain(`${E2E.gallerySlug}-favorites-web-size.zip`);
+    const zip = await res.body();
+    expect(zip.subarray(0, 2).toString()).toBe("PK");
+    expect(zip.includes(Buffer.from("e2e-photo.jpg"))).toBe(true);
+
+    expect(errors).toEqual([]);
+    await context.close();
   });
 
   test("the studio sets a link's expiry date, and the client sees it", async ({ page, browser }) => {
