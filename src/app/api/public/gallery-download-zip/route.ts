@@ -6,6 +6,7 @@ import { resolveDownloadSize, resolveDownloadTarget, zipNameFor } from "@/lib/pu
 import { gallerySessionCookieName, publicVisitorCanViewGallery } from "@/lib/public-site/gallery-auth";
 import { withErrorLogging } from "@/lib/with-error-logging";
 import { type ZipEntry, zipResponse } from "@/lib/zip-download";
+import { countGalleryStat } from "@/lib/gallery-stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,5 +44,8 @@ export const GET = withErrorLogging("public-gallery-download-zip", async (req: N
     }
   }
 
-  return zipResponse("public-gallery-download-zip", zipNameFor(gallery.slug, chosenSize), targets(), req.signal);
+  const res = zipResponse("public-gallery-download-zip", zipNameFor(gallery.slug, chosenSize), targets(), req.signal);
+  // A whole-gallery zip counts as one download; a refused one (503) doesn't count.
+  if (res.ok) countGalleryStat(gallery.id, "downloads");
+  return res;
 });

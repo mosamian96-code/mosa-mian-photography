@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
@@ -16,6 +16,7 @@ import { gallerySessionCookieName, verifyGalleryToken } from "@/lib/public-site/
 import { formatCaptureRange, pickCoverImage } from "@/lib/public-site/gallery-cover";
 import { firstCoverUrl, loadGalleryImages, resolvePath } from "@/lib/public-site/resolve";
 import { SITE_NAME, shareMetadata } from "@/lib/public-site/seo";
+import { countGalleryStat, isCountableView } from "@/lib/gallery-stats";
 
 type Props = { params: Promise<{ path: string[] }> };
 
@@ -103,6 +104,9 @@ export default async function PublicPathPage({ params }: Props) {
         return <GalleryPasswordForm galleryId={gallery.id} />;
       }
     }
+
+    // Read before after(): request data isn't available inside it in a page.
+    if (isCountableView(await headers())) countGalleryStat(gallery.id, "views");
 
     const images = await loadGalleryImages(gallery);
     const hasGeotagged = images.some((img) => img.gpsLat != null && img.gpsLon != null);

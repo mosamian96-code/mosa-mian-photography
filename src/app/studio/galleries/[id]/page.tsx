@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ClientLinksSection } from "./client-links";
+import { GalleryStatsSection } from "./gallery-stats";
 import { GallerySettingsModal } from "./gallery-settings-modal";
 import { StudioLightbox } from "./studio-lightbox";
 import { startDownload } from "@/app/studio/start-download";
@@ -477,6 +478,7 @@ export default function GalleryEditorPage() {
         />
       ) : null}
 
+      <GalleryStatsSection galleryId={gallery.id} />
       <ClientLinksSection galleryId={gallery.id} />
     </div>
   );
