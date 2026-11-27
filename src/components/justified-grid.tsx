@@ -1,17 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { computeJustifiedRows, type JustifyInput } from "@/lib/public-site/justify";
+import { computeJustifiedRows, rowHeightForWidth, type JustifyInput } from "@/lib/public-site/justify";
 
 export function JustifiedGrid<T extends JustifyInput>({
   items,
   targetRowHeight = 280,
   gap = 4,
+  minPerRow,
   renderItem,
 }: {
   items: T[];
   targetRowHeight?: number;
   gap?: number;
+  /** When set, rows get shorter on narrow screens so at least this many landscape
+   * photos fit side by side (see rowHeightForWidth). */
+  minPerRow?: number;
   renderItem: (item: T, width: number, height: number, index: number) => React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,7 +41,8 @@ export function JustifiedGrid<T extends JustifyInput>({
 
   // Precise justified rows once the real container width is known.
   if (width > 0) {
-    const rows = computeJustifiedRows(items, width, targetRowHeight, gap);
+    const rowHeight = minPerRow ? rowHeightForWidth(targetRowHeight, width, minPerRow, gap) : targetRowHeight;
+    const rows = computeJustifiedRows(items, width, rowHeight, gap);
     const indexById = new Map(items.map((item, i) => [item.id, i]));
     return (
       <div ref={containerRef} className="flex flex-col" style={{ gap }}>

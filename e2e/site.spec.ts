@@ -127,6 +127,24 @@ test.describe.serial("site", () => {
     expect(errors).toEqual([]);
   });
 
+  test("on a phone, the S/M/L thumbnail sizes each look different", async ({ page }) => {
+    // Fixed row heights made Medium and Large identical on a phone (one photo, full width).
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/${E2E.folderSlug}/${E2E.gallerySlug}`);
+    const tile = await expectCoverThenPhotos(page);
+    const sizes = page.getByRole("group", { name: "Image size" });
+    const widthAfter = async (label: string) => {
+      await sizes.getByRole("button", { name: label, exact: true }).click();
+      await expect(sizes.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
+      return (await tile.boundingBox())!.width;
+    };
+    const small = await widthAfter("S");
+    const medium = await widthAfter("M");
+    const large = await widthAfter("L");
+    expect(small).toBeLessThan(medium);
+    expect(medium).toBeLessThan(large);
+  });
+
   test("a client link shows the photo and downloads the whole gallery in either size", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
