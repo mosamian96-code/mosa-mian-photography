@@ -58,3 +58,24 @@ export function computeJustifiedRows(
 
   return rows;
 }
+
+/** The aspect ratio a "photos per row" promise is made for: an ordinary landscape. */
+const LANDSCAPE_ASPECT = 1.5;
+
+/**
+ * The row height to aim for so that at least `minPerRow` landscape photos fit side by
+ * side, never taller than `targetRowHeight`.
+ *
+ * The small/medium/large toggle used to be fixed heights (160/260/420). On a phone's
+ * ~343px column a landscape photo at 260px tall is already wider than the screen, so
+ * Medium and Large both became "one photo, full width" and Small barely differed --
+ * the toggle looked broken. Capping the height by width keeps desktop exactly as it
+ * was (the fixed heights already fit there) and gives phones 3/2/1 photos per row.
+ */
+export function rowHeightForWidth(targetRowHeight: number, containerWidth: number, minPerRow: number, gap: number) {
+  if (containerWidth <= 0 || minPerRow < 1) return targetRowHeight;
+  // Floor, so the row-break check in computeJustifiedRows (strict ">") lets exactly
+  // minPerRow photos through rather than tipping over on a rounding error.
+  const fitting = Math.floor((containerWidth - gap * (minPerRow - 1)) / (minPerRow * LANDSCAPE_ASPECT));
+  return Math.max(1, Math.min(targetRowHeight, fitting));
+}

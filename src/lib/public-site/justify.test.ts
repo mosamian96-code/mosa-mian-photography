@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeJustifiedRows } from "./justify";
+import { computeJustifiedRows, rowHeightForWidth } from "./justify";
 
 describe("computeJustifiedRows", () => {
   it("fills each full row to exactly the container width", () => {
@@ -40,5 +40,28 @@ describe("computeJustifiedRows", () => {
   it("returns nothing for an empty container width or item list", () => {
     expect(computeJustifiedRows([], 1000, 300, 4)).toEqual([]);
     expect(computeJustifiedRows([{ id: "a", aspect: 1 }], 0, 300, 4)).toEqual([]);
+  });
+});
+
+describe("rowHeightForWidth", () => {
+  const landscapes = Array.from({ length: 12 }, (_, i) => ({ id: String(i), aspect: 1.5 }));
+  const perRow = (width: number, target: number, minPerRow: number) =>
+    computeJustifiedRows(landscapes, width, rowHeightForWidth(target, width, minPerRow, 4), 4)[0].items.length;
+
+  it("keeps the desktop heights unchanged when they already fit", () => {
+    expect(rowHeightForWidth(160, 1120, 3, 4)).toBe(160);
+    expect(rowHeightForWidth(260, 1120, 2, 4)).toBe(260);
+    expect(rowHeightForWidth(420, 1120, 1, 4)).toBe(420);
+  });
+
+  it("gives a phone column 3, 2 and 1 landscape photos per row for small, medium and large", () => {
+    // 375px phone minus the page's 16px gutters. Before, medium and large were both 1.
+    expect(perRow(343, 160, 3)).toBe(3);
+    expect(perRow(343, 260, 2)).toBe(2);
+    expect(perRow(343, 420, 1)).toBe(1);
+  });
+
+  it("falls back to the target before the width is known", () => {
+    expect(rowHeightForWidth(260, 0, 2, 4)).toBe(260);
   });
 });

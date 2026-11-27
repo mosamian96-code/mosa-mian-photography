@@ -79,10 +79,12 @@ function srcSetFor(urls: Record<string, string>, format: "avif" | "webp", imageW
 
 // Row-height targets behind the small/medium/large toggle -- "medium" matches the
 // grid's long-standing default so switching to it is a visual no-op.
+// minPerRow keeps the sizes distinct on phones, where the fixed heights alone made
+// Medium and Large identical (see rowHeightForWidth).
 const SIZE_OPTIONS = [
-  { key: "small", label: "S", rowHeight: 160 },
-  { key: "medium", label: "M", rowHeight: 260 },
-  { key: "large", label: "L", rowHeight: 420 },
+  { key: "small", label: "S", rowHeight: 160, minPerRow: 3 },
+  { key: "medium", label: "M", rowHeight: 260, minPerRow: 2 },
+  { key: "large", label: "L", rowHeight: 420, minPerRow: 1 },
 ] as const;
 type GridSize = (typeof SIZE_OPTIONS)[number]["key"];
 const GRID_SIZE_STORAGE_KEY = "mm-gallery-grid-size";
@@ -163,7 +165,8 @@ export function GalleryView({
     setGridSize(size);
     localStorage.setItem(GRID_SIZE_STORAGE_KEY, size);
   }, []);
-  const targetRowHeight = SIZE_OPTIONS.find((o) => o.key === gridSize)!.rowHeight;
+  const sizeOption = SIZE_OPTIONS.find((o) => o.key === gridSize)!;
+  const targetRowHeight = sizeOption.rowHeight;
 
   const setIndex = useCallback(
     (index: number | null) => {
@@ -275,6 +278,7 @@ export function GalleryView({
         <JustifiedGrid
           items={images.map((img) => ({ id: img.assetId, aspect: (img.width ?? 3) / (img.height ?? 2) }))}
           targetRowHeight={targetRowHeight}
+          minPerRow={sizeOption.minPerRow}
           gap={4}
           renderItem={(_gridItem, width, height, index) => {
           const image = images[index];
